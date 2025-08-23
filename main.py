@@ -5,6 +5,11 @@ import datetime
 import os
 from dotenv import load_dotenv
 import asyncio
+import aiohttp
+import io
+from PIL import Image
+import pytesseract
+import re
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -64,6 +69,10 @@ BOSS_EMOJIS = [
     '⏸️', '🔯', '✳️', '🔄'
 ]
 
+# Создаем папки для хранения данных
+os.makedirs('loot_screenshots', exist_ok=True)
+os.makedirs('temp_images', exist_ok=True)
+
 
 # Подключение к БД
 def get_db_connection():
@@ -101,6 +110,19 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS boss_loot (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            boss_kill_id INTEGER,
+            user_id INTEGER,
+            username TEXT,
+            screenshot_path TEXT,
+            loot_text TEXT,
+            created_at TEXT,
+            FOREIGN KEY (boss_kill_id) REFERENCES boss_kills (id)
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -109,7 +131,7 @@ def init_db():
 async def on_ready():
     print(f'Бот {bot.user} запущен!')
     init_db()
-    check_respawns.start()  # Запускаем фоновую задачу проверки респавнов
+    check_respawns.start()
 
 
 # Фоновая задача для проверки респавнов боссов
@@ -118,7 +140,6 @@ async def check_respawns():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Получаем всех боссов, которые еще не респавнулись
     cursor.execute('''
         SELECT id, boss_name, respawn, channel_id 
         FROM boss_kills 
@@ -131,10 +152,8 @@ async def check_respawns():
     for boss in bosses_to_respawn:
         respawn_time = datetime.datetime.strptime(boss['respawn'], "%d.%m.%y-%H:%M")
 
-        # Если время респавна наступило
         if now >= respawn_time:
             try:
-                # Получаем канал для уведомления
                 channel = bot.get_channel(boss['channel_id'])
                 if channel:
                     await channel.send(
@@ -144,7 +163,6 @@ async def check_respawns():
                         f"Используйте команду !spawn для отметки появления."
                     )
 
-                    # Помечаем, что уведомление отправлено
                     cursor.execute(
                         'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
                         (boss['id'],)
@@ -156,10 +174,35 @@ async def check_respawns():
     conn.close()
 
 
+# Функция для обработки изображений с помощью OCR
+async def process_image_with_ocr(image_url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as resp:
+                if resp.status == 200:
+                    image_data = await resp.read()
+                    image = Image.open(io.BytesIO(image_data))
+
+                    # Сохраняем временную копию для обработки
+                    temp_path = f"temp_images/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    image.save(temp_path)
+
+                    # Используем OCR для извлечения текста
+                    text = pytesseract.image_to_string(image, lang='eng')
+
+                    # Ищем паттерны логов дропа
+                    loot_pattern = r'\[\d{2}:\d{2}\].+acquired.+from'
+                    loot_items = re.findall(loot_pattern, text)
+
+                    return loot_items, temp_path
+    except Exception as e:
+        print(f"Ошибка при обработке изображения: {e}")
+        return [], None
+
+
 @bot.command()
 async def spawn(ctx):
     """Команда для выбора босса через реакции"""
-    # Создаем embed с выбором боссов
     embed = discord.Embed(
         title="Выберите босса который появился",
         description="Поставьте реакцию с номером босса:",
@@ -175,7 +218,6 @@ async def spawn(ctx):
 
     message = await ctx.send(embed=embed)
 
-    # Добавляем реакции для выбора
     for i in range(len(BOSS_LIST)):
         await message.add_reaction(BOSS_EMOJIS[i])
 
@@ -187,7 +229,6 @@ async def on_reaction_add(reaction, user):
 
     # Обработка выбора босса через реакции
     if str(reaction.emoji) in BOSS_EMOJIS and reaction.message.author == bot.user:
-        # Проверяем, что это сообщение с выбором босса
         if not reaction.message.embeds:
             return
 
@@ -195,17 +236,13 @@ async def on_reaction_add(reaction, user):
         if embed.title != "Выберите босса который появился":
             return
 
-        # Определяем выбранного босса
         boss_index = BOSS_EMOJIS.index(str(reaction.emoji))
         if boss_index >= len(BOSS_LIST):
             return
 
         boss_name = BOSS_LIST[boss_index]
-
-        # Удаляем сообщение с выбором
         await reaction.message.delete()
 
-        # Отправляем уведомление о боссе
         channel = discord.utils.get(reaction.message.guild.channels, name="boss_alert")
         if not channel:
             channel = reaction.message.channel
@@ -217,18 +254,16 @@ async def on_reaction_add(reaction, user):
             f"Поставьте реакцию ✅ для отметки участия на боссе\n\n"
             f"📍 Действия\n"
             f"✅ - Участвую в убийстве босса\n"
-            f"💬 - Ответьте на это сообщение чтобы отметить убийство босса"
+            f"💬 - Ответьте на это сообщение со скриншотом дропа чтобы отметить убийство босса"
         )
 
         await message.add_reaction('✅')
 
-        # Расчет времени
         now = datetime.datetime.now()
         kill_time = (now + datetime.timedelta(minutes=5)).strftime("%d.%m.%y-%H:%M")
         respawn_hours = BOSS_RESPAWNS[boss_name]
         respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%d.%m.%y-%H:%M")
 
-        # Сохранение в БД
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -245,7 +280,6 @@ async def on_reaction_add(reaction, user):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Проверяем, не убит ли уже босс
         cursor.execute(
             'SELECT id, is_killed FROM boss_kills WHERE message_id = ?',
             (reaction.message.id,)
@@ -253,7 +287,6 @@ async def on_reaction_add(reaction, user):
         boss_kill = cursor.fetchone()
 
         if boss_kill and not boss_kill['is_killed']:
-            # Проверяем, есть ли уже пользователь
             cursor.execute(
                 'SELECT * FROM boss_attendance WHERE boss_kill_id = ? AND user_id = ?',
                 (boss_kill['id'], user.id)
@@ -308,10 +341,8 @@ async def on_message(message):
     # Обработка ответов на сообщения о боссах
     if message.reference and message.reference.message_id:
         try:
-            # Получаем сообщение, на которое ответили
             replied_message = await message.channel.fetch_message(message.reference.message_id)
 
-            # Проверяем, что это сообщение от бота и в канале boss_alert
             if (replied_message.author == bot.user and
                     replied_message.channel.name == "boss_alert" and
                     "🔥 БОСС ПОЯВИЛСЯ!" in replied_message.content):
@@ -319,7 +350,6 @@ async def on_message(message):
                 conn = get_db_connection()
                 cursor = conn.cursor()
 
-                # Проверяем, не убит ли уже босс
                 cursor.execute(
                     'SELECT id, is_killed FROM boss_kills WHERE message_id = ?',
                     (replied_message.id,)
@@ -332,6 +362,32 @@ async def on_message(message):
                         'UPDATE boss_kills SET is_killed = 1 WHERE id = ?',
                         (boss_kill['id'],)
                     )
+
+                    # Обрабатываем вложения (скриншоты дропа)
+                    loot_items = []
+                    screenshot_path = None
+
+                    if message.attachments:
+                        for attachment in message.attachments:
+                            if any(attachment.filename.lower().endswith(ext) for ext in
+                                   ['.png', '.jpg', '.jpeg', '.gif', '.bmp']):
+                                # Сохраняем скриншот
+                                screenshot_path = f"loot_screenshots/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{attachment.filename}"
+                                await attachment.save(screenshot_path)
+
+                                # Анализируем скриншот с помощью OCR
+                                items, _ = await process_image_with_ocr(attachment.url)
+                                loot_items.extend(items)
+
+                    # Сохраняем информацию о дропе в базу данных
+                    loot_text = "\n".join(loot_items) if loot_items else "Не удалось распознать дроп"
+
+                    cursor.execute(
+                        'INSERT INTO boss_loot (boss_kill_id, user_id, username, screenshot_path, loot_text, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                        (boss_kill['id'], message.author.id, str(message.author), screenshot_path, loot_text,
+                         datetime.datetime.now().strftime("%d.%m.%y-%H:%M"))
+                    )
+
                     conn.commit()
 
                     # Удаляем реакцию ✅ и добавляем ☠️
@@ -340,19 +396,96 @@ async def on_message(message):
 
                     # Редактируем сообщение о боссе
                     new_content = replied_message.content.replace(
-                        "💬 - Ответьте на это сообщение чтобы отметить убийство босса",
+                        "💬 - Ответьте на это сообщение со скриншотом дропа чтобы отметить убийство босса",
                         "☠️ - Босс убит! Отметки участия закрыты."
                     )
                     await replied_message.edit(content=new_content)
 
-                    # Отправляем подтверждение
-                    await message.channel.send(f"{message.author.mention} отметил(а) убийство босса!")
+                    # Отправляем подтверждение с информацией о дропе
+                    if loot_items:
+                        loot_info = "\n".join([f"• {item}" for item in loot_items[:5]])  # Показываем первые 5 предметов
+                        if len(loot_items) > 5:
+                            loot_info += f"\n• ... и еще {len(loot_items) - 5} предметов"
+
+                        await message.channel.send(
+                            f"{message.author.mention} отметил(а) убийство босса!\n"
+                            f"📦 Выбитые предметы:\n{loot_info}"
+                        )
+                    else:
+                        await message.channel.send(
+                            f"{message.author.mention} отметил(а) убийство босса!\n"
+                            f"📦 Не удалось распознать предметы из скриншота."
+                        )
 
                 conn.close()
         except Exception as e:
             print(f"Ошибка при обработке ответа на сообщение: {e}")
 
     await bot.process_commands(message)
+
+
+# Команда для просмотра дропа с босса
+@bot.command()
+async def loot(ctx, boss_kill_id: int = None):
+    """Показывает дроп с указанного убийства босса"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if boss_kill_id:
+        # Показываем дроп для конкретного убийства
+        cursor.execute(
+            'SELECT bl.*, bk.boss_name FROM boss_loot bl JOIN boss_kills bk ON bl.boss_kill_id = bk.id WHERE bl.boss_kill_id = ?',
+            (boss_kill_id,)
+        )
+        loot_data = cursor.fetchall()
+
+        if not loot_data:
+            await ctx.send("Не найдено данных о дропе для указанного ID убийства.")
+            conn.close()
+            return
+
+        embed = discord.Embed(title=f"Дроп с {loot_data[0]['boss_name']}", color=0x00ff00)
+
+        for loot in loot_data:
+            loot_text = loot['loot_text'] if loot['loot_text'] else "Не удалось распознать дроп"
+            embed.add_field(
+                name=f"От {loot['username']}",
+                value=f"```{loot_text[:500]}...```" if len(loot_text) > 500 else f"```{loot_text}```",
+                inline=False
+            )
+
+        await ctx.send(embed=embed)
+    else:
+        # Показываем последние 5 убийств с дропом
+        cursor.execute('''
+            SELECT bk.id, bk.boss_name, bk.kill_time, COUNT(bl.id) as loot_count 
+            FROM boss_kills bk 
+            LEFT JOIN boss_loot bl ON bk.id = bl.boss_kill_id 
+            WHERE bk.is_killed = 1 
+            GROUP BY bk.id 
+            ORDER BY bk.kill_time DESC 
+            LIMIT 5
+        ''')
+        recent_kills = cursor.fetchall()
+
+        if not recent_kills:
+            await ctx.send("Нет данных об убийствах боссов.")
+            conn.close()
+            return
+
+        embed = discord.Embed(title="Последние убийства боссов", color=0x00ff00)
+
+        for kill in recent_kills:
+            embed.add_field(
+                name=f"{kill['boss_name']} ({kill['kill_time']})",
+                value=f"ID: {kill['id']}, Дропов: {kill['loot_count']}",
+                inline=False
+            )
+
+        embed.set_footer(text="Используйте !loot <ID> для просмотра деталей дропа")
+        await ctx.send(embed=embed)
+
+    conn.close()
 
 
 @bot.command()
@@ -363,7 +496,6 @@ async def boss_rate(ctx, member: discord.Member = None):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Статистика за сегодня
     today = datetime.datetime.now().strftime("%d.%m.%y")
     cursor.execute(
         'SELECT COUNT(*) FROM boss_kills WHERE kill_time LIKE ?',
@@ -380,7 +512,6 @@ async def boss_rate(ctx, member: discord.Member = None):
     )
     attended_today = cursor.fetchone()[0] or 0
 
-    # Статистика за неделю
     week_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime("%d.%m.%y")
     cursor.execute(
         'SELECT COUNT(*) FROM boss_kills WHERE kill_time >= ?',
@@ -397,7 +528,6 @@ async def boss_rate(ctx, member: discord.Member = None):
     )
     attended_week = cursor.fetchone()[0] or 0
 
-    # Общая статистика
     cursor.execute(
         'SELECT COUNT(*) FROM boss_kills'
     )
@@ -413,12 +543,10 @@ async def boss_rate(ctx, member: discord.Member = None):
 
     conn.close()
 
-    # Расчет процентов
     rate_today = (attended_today / total_bosses_today * 100) if total_bosses_today > 0 else 0
     rate_week = (attended_week / total_bosses_week * 100) if total_bosses_week > 0 else 0
     rate_total = (attended_total / total_bosses * 100) if total_bosses > 0 else 0
 
-    # Формирование ответа
     embed = discord.Embed(title=f"Статистика посещаемости для {member.display_name}")
     embed.add_field(name="Сегодня", value=f"{attended_today}/{total_bosses_today} ({rate_today:.1f}%)")
     embed.add_field(name="За неделю", value=f"{attended_week}/{total_bosses_week} ({rate_week:.1f}%)")
