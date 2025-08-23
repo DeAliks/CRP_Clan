@@ -249,7 +249,7 @@ async def on_command_error(ctx, error):
 if __name__ == "__main__":
     try:
         # Запускаем бота с токеном из переменных окружения
-        bot.run(os.getenv('MTQwODQ5MTI2MzM0MjI4NDgxMA.GptboO.Av96Dmg2XOof2IY3w1T2M4IPrmhgVCEo8je3eA')
+        bot.run(os.getenv('MTQwODQ5MTI2MzM0MjI4NDgxMA.GptboO.Av96Dmg2XOof2IY3w1T2M4IPrmhgVCEo8je3eA'))
         #('DISCORD_TOKEN'))
     except KeyboardInterrupt:
         print("Бот остановлен")
