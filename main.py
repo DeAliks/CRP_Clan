@@ -7,20 +7,29 @@ from dotenv import load_dotenv
 import asyncio
 import aiohttp
 import io
-from PIL import Image
+from PIL import Image, ImageFilter, ImageEnhance
 import pytesseract
 import re
 import numpy as np
-from PIL import Image, ImageFilter, ImageEnhance
+import logging
 
-
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot_debug.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Загрузка переменных окружения
 load_dotenv()
 
 TOKEN = os.getenv('DISCORD_TOKEN')
 if not TOKEN:
-    print("ОШИБКА: Токен не найден!")
+    logger.error("Токен не найден!")
     exit(1)
 
 intents = discord.Intents.default()
@@ -43,28 +52,13 @@ BOSS_RESPAWNS = {
     "Baron - 88 LV": 32,
     "Wannitas - 93 LV": 48,
     "Metus - 93 LV": 48,
-    "Sapgirus - 80 LV": 168,  # 7 дней (168 часов)
-    "Neutro 80 LV": 168,  # 7 дней
-    "Clemantis - 70 LV": 168  # 7 дней
+    "Sapgirus - 80 LV": 168,
+    "Neutro 80 LV": 168,
+    "Clemantis - 70 LV": 168
 }
 
 # Список боссов для выбора
-BOSS_LIST = [
-    "Venatus - 60 LV",
-    "Viorent - 65 LV",
-    "Ego - 70 LV",
-    "Livera - 75 LV",
-    "Araneo - 75 LV",
-    "Undomiel - 80 LV",
-    "Lady Dalia 85 LV",
-    "Amentis - 88 LV",
-    "Baron - 88 LV",
-    "Wannitas - 93 LV",
-    "Metus - 93 LV",
-    "Sapgirus - 80 LV",
-    "Neutro 80 LV",
-    "Clemantis - 70 LV"
-]
+BOSS_LIST = list(BOSS_RESPAWNS.keys())
 
 # Эмодзи для выбора боссов
 BOSS_EMOJIS = [
@@ -76,6 +70,7 @@ BOSS_EMOJIS = [
 # Создаем папки для хранения данных
 os.makedirs('loot_screenshots', exist_ok=True)
 os.makedirs('temp_images', exist_ok=True)
+os.makedirs('debug_images', exist_ok=True)  # Для отладочных изображений
 
 
 # Подключение к БД
@@ -90,11 +85,9 @@ def migrate_database():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Проверяем существование таблиц и добавляем недостающие колонки
     cursor.execute("PRAGMA table_info(boss_kills)")
     columns = [column[1] for column in cursor.fetchall()]
 
-    # Добавляем недостающие колонки в boss_kills
     if 'is_killed' not in columns:
         cursor.execute("ALTER TABLE boss_kills ADD COLUMN is_killed INTEGER DEFAULT 0")
 
@@ -104,7 +97,6 @@ def migrate_database():
     if 'channel_id' not in columns:
         cursor.execute("ALTER TABLE boss_kills ADD COLUMN channel_id INTEGER")
 
-    # Проверяем существование таблицы boss_loot
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='boss_loot'")
     if not cursor.fetchone():
         cursor.execute('''
@@ -169,13 +161,12 @@ def init_db():
     conn.commit()
     conn.close()
 
-    # Выполняем миграцию для существующих баз данных
     migrate_database()
 
 
 @bot.event
 async def on_ready():
-    print(f'Бот {bot.user} запущен!')
+    logger.info(f'Бот {bot.user} запущен!')
     init_db()
     check_respawns.start()
 
@@ -215,37 +206,126 @@ async def check_respawns():
                             (boss['id'],)
                         )
                         conn.commit()
+                        logger.info(f"Уведомление о респавне отправлено для {boss['boss_name']}")
             except Exception as e:
-                print(f"Ошибка при обработке респавна босса {boss['boss_name']}: {e}")
+                logger.error(f"Ошибка при обработке респавна босса {boss['boss_name']}: {e}")
 
         conn.close()
     except Exception as e:
-        print(f"Ошибка в задаче check_respawns: {e}")
+        logger.error(f"Ошибка в задаче check_respawns: {e}")
 
 
-# Функция для обработки изображений с помощью OCR
+def save_debug_image(image, name):
+    """Сохраняет изображение для отладки"""
+    debug_path = f"debug_images/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{name}.png"
+    image.save(debug_path, 'PNG')
+    return debug_path
+
+
+def enhance_image_for_ocr(image):
+    """Улучшает изображение для лучшего распознавания текста"""
+    # Сохраняем исходное изображение
+    original_path = save_debug_image(image, "01_original")
+    logger.info(f"Сохранено исходное изображение: {original_path}")
+
+    # Увеличиваем контрастность
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(2.0)
+    contrast_path = save_debug_image(image, "02_contrast")
+    logger.info(f"Сохранено изображение после контраста: {contrast_path}")
+
+    # Увеличиваем резкость
+    enhancer = ImageEnhance.Sharpness(image)
+    image = enhancer.enhance(2.0)
+    sharpness_path = save_debug_image(image, "03_sharpness")
+    logger.info(f"Сохранено изображение после резкости: {sharpness_path}")
+
+    # Применяем фильтр для уменьшения шума
+    image = image.filter(ImageFilter.MedianFilter(3))
+    filtered_path = save_debug_image(image, "04_filtered")
+    logger.info(f"Сохранено изображение после фильтра: {filtered_path}")
+
+    # Конвертируем в numpy array для обработки
+    img_array = np.array(image)
+
+    # Целевые цвета из HEX в RGB
+    background_color = np.array([15, 15, 18])  # #0f0f12
+    time_color = np.array([150, 150, 150])  # #969696
+    text_color = np.array([184, 184, 183])  # #b8b8b7
+    drop_colors = [
+        np.array([13, 108, 198]),  # #0d6cc6
+        np.array([73, 20, 116]),  # #491474
+        np.array([8, 153, 35]),  # #089923
+        np.array([173, 6, 7])  # #ad0607
+    ]
+
+    # Создаем маску для текста (все целевые цвета)
+    text_mask = np.zeros(img_array.shape[:2], dtype=bool)
+
+    # Добавляем цвета текста в маску
+    for color in [time_color, text_color] + drop_colors:
+        color_diff = np.sqrt(np.sum((img_array - color) ** 2, axis=2))
+        text_mask = text_mask | (color_diff < 50)  # допуск 50
+
+    # Создаем новое изображение с белым фоном и черным текстом
+    enhanced_array = np.ones_like(img_array) * 255  # белый фон
+    enhanced_array[text_mask] = [0, 0, 0]  # черный текст
+
+    # Конвертируем обратно в PIL Image
+    enhanced_image = Image.fromarray(enhanced_array.astype('uint8'))
+    color_filtered_path = save_debug_image(enhanced_image, "05_color_filtered")
+    logger.info(f"Сохранено изображение после цветовой фильтрации: {color_filtered_path}")
+
+    # Дополнительное улучшение контраста
+    enhancer = ImageEnhance.Contrast(enhanced_image)
+    enhanced_image = enhancer.enhance(10.0)
+    final_path = save_debug_image(enhanced_image, "06_final")
+    logger.info(f"Сохранено финальное изображение: {final_path}")
+
+    return enhanced_image
+
+
 async def process_image_with_ocr(image_url):
     try:
+        logger.info(f"Начинаем обработку изображения: {image_url}")
+
         async with aiohttp.ClientSession() as session:
             async with session.get(image_url) as resp:
                 if resp.status == 200:
                     image_data = await resp.read()
                     image = Image.open(io.BytesIO(image_data))
 
+                    # Конвертируем в RGB если нужно
+                    if image.mode != 'RGB':
+                        image = image.convert('RGB')
+
+                    # Улучшаем качество изображения для лучшего распознавания
+                    image = enhance_image_for_ocr(image)
+
                     # Сохраняем временную копию для обработки
                     temp_path = f"temp_images/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                    image.save(temp_path)
+                    image.save(temp_path, 'PNG')
+                    logger.info(f"Сохранено временное изображение: {temp_path}")
 
                     # Используем OCR для извлечения текста
-                    text = pytesseract.image_to_string(image, lang='eng')
+                    custom_config = r'--oem 3 --psm 6'
+                    text = pytesseract.image_to_string(image, lang='eng', config=custom_config)
+
+                    # Логируем распознанный текст
+                    logger.info(f"Распознанный текст:\n{text}")
 
                     # Ищем паттерны логов дропа
                     loot_pattern = r'\[\d{2}:\d{2}\].+acquired.+from'
                     loot_items = re.findall(loot_pattern, text)
 
+                    logger.info(f"Найденные предметы: {loot_items}")
+
                     return loot_items, temp_path
+                else:
+                    logger.error(f"Ошибка загрузки изображения: статус {resp.status}")
+                    return [], None
     except Exception as e:
-        print(f"Ошибка при обработке изображения: {e}")
+        logger.error(f"Ошибка при обработке изображения: {e}")
         return [], None
 
 
@@ -270,6 +350,8 @@ async def spawn(ctx):
     for i in range(len(BOSS_LIST)):
         await message.add_reaction(BOSS_EMOJIS[i])
 
+    logger.info(f"Пользователь {ctx.author} использовал команду !spawn")
+
 
 @bot.event
 async def on_reaction_add(reaction, user):
@@ -291,6 +373,7 @@ async def on_reaction_add(reaction, user):
 
         boss_name = BOSS_LIST[boss_index]
         await reaction.message.delete()
+        logger.info(f"Пользователь {user} выбрал босса: {boss_name}")
 
         channel = discord.utils.get(reaction.message.guild.channels, name="boss_alert")
         if not channel:
@@ -322,6 +405,7 @@ async def on_reaction_add(reaction, user):
         conn.commit()
         conn.close()
 
+        logger.info(f"Создано уведомление о боссе {boss_name} (ID сообщения: {message.id})")
         return
 
     # Обработка участия в убийстве босса
@@ -347,11 +431,13 @@ async def on_reaction_add(reaction, user):
                     'INSERT INTO boss_attendance (boss_kill_id, user_id, username, attended) VALUES (?, ?, ?, 1)',
                     (boss_kill['id'], user.id, str(user))
                 )
+                logger.info(f"Пользователь {user} добавлен к участию в убийстве босса (ID: {boss_kill['id']})")
             else:
                 cursor.execute(
                     'UPDATE boss_attendance SET attended = 1 WHERE boss_kill_id = ? AND user_id = ?',
                     (boss_kill['id'], user.id)
                 )
+                logger.info(f"Пользователь {user} подтвердил участие в убийстве босса (ID: {boss_kill['id']})")
 
             conn.commit()
         conn.close()
@@ -378,6 +464,7 @@ async def on_reaction_remove(reaction, user):
                 (boss_kill['id'], user.id)
             )
             conn.commit()
+            logger.info(f"Пользователь {user} отменил участие в убийстве босса (ID: {boss_kill['id']})")
         conn.close()
 
 
@@ -423,6 +510,7 @@ async def on_message(message):
                                 # Сохраняем скриншот
                                 screenshot_path = f"loot_screenshots/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{attachment.filename}"
                                 await attachment.save(screenshot_path)
+                                logger.info(f"Сохранен скриншот дропа: {screenshot_path}")
 
                                 # Анализируем скриншот с помощью OCR
                                 items, _ = await process_image_with_ocr(attachment.url)
@@ -452,7 +540,7 @@ async def on_message(message):
 
                     # Отправляем подтверждение с информацией о дропе
                     if loot_items:
-                        loot_info = "\n".join([f"• {item}" for item in loot_items[:5]])  # Показываем первые 5 предметов
+                        loot_info = "\n".join([f"• {item}" for item in loot_items[:5]])
                         if len(loot_items) > 5:
                             loot_info += f"\n• ... и еще {len(loot_items) - 5} предметов"
 
@@ -460,15 +548,17 @@ async def on_message(message):
                             f"{message.author.mention} отметил(а) убийство босса!\n"
                             f"📦 Выбитые предметы:\n{loot_info}"
                         )
+                        logger.info(f"Успешно распознаны предметы: {loot_items}")
                     else:
                         await message.channel.send(
                             f"{message.author.mention} отметил(а) убийство босса!\n"
-                            f"📦 Не удалось распознать предметы из скриншота."
+                            f"📦 Не удалось распознать предметы из скриншота. Пожалуйста, проверьте качество изображения."
                         )
+                        logger.warning(f"Не удалось распознать предметы из скриншота {screenshot_path}")
 
                 conn.close()
         except Exception as e:
-            print(f"Ошибка при обработке ответа на сообщение: {e}")
+            logger.error(f"Ошибка при обработке ответа на сообщение: {e}")
 
     await bot.process_commands(message)
 
@@ -481,7 +571,6 @@ async def loot(ctx, boss_kill_id: int = None):
     cursor = conn.cursor()
 
     if boss_kill_id:
-        # Показываем дроп для конкретного убийства
         cursor.execute(
             'SELECT bl.*, bk.boss_name FROM boss_loot bl JOIN boss_kills bk ON bl.boss_kill_id = bk.id WHERE bl.boss_kill_id = ?',
             (boss_kill_id,)
@@ -504,8 +593,8 @@ async def loot(ctx, boss_kill_id: int = None):
             )
 
         await ctx.send(embed=embed)
+        logger.info(f"Показан дроп для убийства босса ID: {boss_kill_id}")
     else:
-        # Показываем последние 5 убийств с дропом
         cursor.execute('''
             SELECT bk.id, bk.boss_name, bk.kill_time, COUNT(bl.id) as loot_count 
             FROM boss_kills bk 
@@ -533,6 +622,7 @@ async def loot(ctx, boss_kill_id: int = None):
 
         embed.set_footer(text="Используйте !loot <ID> для просмотра деталей дропа")
         await ctx.send(embed=embed)
+        logger.info("Показаны последние убийства боссов")
 
     conn.close()
 
@@ -602,95 +692,15 @@ async def boss_rate(ctx, member: discord.Member = None):
     embed.add_field(name="За всё время", value=f"{attended_total}/{total_bosses} ({rate_total:.1f}%)")
 
     await ctx.send(embed=embed)
+    logger.info(f"Показана статистика для пользователя {member.display_name}")
 
-
-async def process_image_with_ocr(image_url):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as resp:
-                if resp.status == 200:
-                    image_data = await resp.read()
-                    image = Image.open(io.BytesIO(image_data))
-
-                    # Конвертируем в RGB если нужно
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
-
-                    # Улучшаем качество изображения для лучшего распознавания
-                    image = enhance_image_for_ocr(image)
-
-                    # Сохраняем временную копию для обработки
-                    temp_path = f"temp_images/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                    image.save(temp_path, 'PNG')
-
-                    # Используем OCR для извлечения текста
-                    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist="[]0123456789:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ "'
-                    text = pytesseract.image_to_string(image, lang='eng', config=custom_config)
-
-                    # Ищем паттерны логов дропа
-                    loot_pattern = r'\[\d{2}:\d{2}\].+acquired.+from'
-                    loot_items = re.findall(loot_pattern, text)
-
-                    return loot_items, temp_path
-    except Exception as e:
-        print(f"Ошибка при обработке изображения: {e}")
-        return [], None
-
-
-def enhance_image_for_ocr(image):
-    """Улучшает изображение для лучшего распознавания текста"""
-    # Увеличиваем контрастность
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(2.0)
-
-    # Увеличиваем резкость
-    enhancer = ImageEnhance.Sharpness(image)
-    image = enhancer.enhance(2.0)
-
-    # Применяем фильтр для уменьшения шума
-    image = image.filter(ImageFilter.MedianFilter(3))
-
-    # Конвертируем в numpy array для обработки
-    img_array = np.array(image)
-
-    # Целевые цвета из HEX в RGB
-    background_color = np.array([15, 15, 18])  # #0f0f12
-    time_color = np.array([150, 150, 150])  # #969696
-    text_color = np.array([184, 184, 183])  # #b8b8b7
-    drop_colors = [
-        np.array([13, 108, 198]),  # #0d6cc6
-        np.array([73, 20, 116]),  # #491474
-        np.array([8, 153, 35]),  # #089923
-        np.array([173, 6, 7])  # #ad0607
-    ]
-
-    # Создаем маску для текста (все целевые цвета)
-    text_mask = np.zeros(img_array.shape[:2], dtype=bool)
-
-    # Добавляем цвета текста в маску
-    for color in [time_color, text_color] + drop_colors:
-        color_diff = np.sqrt(np.sum((img_array - color) ** 2, axis=2))
-        text_mask = text_mask | (color_diff < 50)  # допуск 50
-
-    # Создаем новое изображение с белым фоном и черным текстом
-    enhanced_array = np.ones_like(img_array) * 255  # белый фон
-    enhanced_array[text_mask] = [0, 0, 0]  # черный текст
-
-    # Конвертируем обратно в PIL Image
-    enhanced_image = Image.fromarray(enhanced_array.astype('uint8'))
-
-    # Дополнительное улучшение контраста
-    enhancer = ImageEnhance.Contrast(enhanced_image)
-    enhanced_image = enhancer.enhance(10.0)
-
-    return enhanced_image
 
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         await ctx.send("Неизвестная команда!")
     else:
-        print(f"Произошла ошибка: {error}")
+        logger.error(f"Произошла ошибка: {error}")
 
 
 # Запуск бота
@@ -698,4 +708,4 @@ if __name__ == "__main__":
     try:
         bot.run(TOKEN)
     except Exception as e:
-        print(f"Произошла ошибка при запуске бота: {e}")#//test
+        logger.error(f"Произошла ошибка при запуске бота: {e}")
