@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import sqlite3
 import datetime
 import os
@@ -84,7 +84,9 @@ def init_db():
             kill_time TEXT,
             respawn TEXT,
             message_id INTEGER,
-            is_killed INTEGER DEFAULT 0
+            channel_id INTEGER,
+            is_killed INTEGER DEFAULT 0,
+            respawn_notified INTEGER DEFAULT 0
         )
     ''')
 
@@ -107,6 +109,51 @@ def init_db():
 async def on_ready():
     print(f'Бот {bot.user} запущен!')
     init_db()
+    check_respawns.start()  # Запускаем фоновую задачу проверки респавнов
+
+
+# Фоновая задача для проверки респавнов боссов
+@tasks.loop(minutes=5)
+async def check_respawns():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Получаем всех боссов, которые еще не респавнулись
+    cursor.execute('''
+        SELECT id, boss_name, respawn, channel_id 
+        FROM boss_kills 
+        WHERE respawn_notified = 0 AND is_killed = 1
+    ''')
+
+    bosses_to_respawn = cursor.fetchall()
+    now = datetime.datetime.now()
+
+    for boss in bosses_to_respawn:
+        respawn_time = datetime.datetime.strptime(boss['respawn'], "%d.%m.%y-%H:%M")
+
+        # Если время респавна наступило
+        if now >= respawn_time:
+            try:
+                # Получаем канал для уведомления
+                channel = bot.get_channel(boss['channel_id'])
+                if channel:
+                    await channel.send(
+                        f"@everyone\n"
+                        f"🔄 БОСС ВОЗРОДИЛСЯ!\n"
+                        f"{boss['boss_name']} снова доступен для убийства!\n"
+                        f"Используйте команду !spawn для отметки появления."
+                    )
+
+                    # Помечаем, что уведомление отправлено
+                    cursor.execute(
+                        'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
+                        (boss['id'],)
+                    )
+                    conn.commit()
+            except Exception as e:
+                print(f"Ошибка при отправке уведомления о респавне: {e}")
+
+    conn.close()
 
 
 @bot.command()
@@ -167,15 +214,13 @@ async def on_reaction_add(reaction, user):
             f"@everyone\n"
             f"🔥 БОСС ПОЯВИЛСЯ!\n"
             f"{boss_name} - сейчас появится\n\n"
-            f"Поставьте реакцию ✅ для отметки участия на боссе\n"
-            f"Поставьте реакцию ❌ для отметки убийства босса\n\n"
+            f"Поставьте реакцию ✅ для отметки участия на боссе\n\n"
             f"📍 Действия\n"
             f"✅ - Участвую в убийстве босса\n"
-            f"❌ - убили босса"
+            f"💬 - Ответьте на это сообщение чтобы отметить убийство босса"
         )
 
         await message.add_reaction('✅')
-        await message.add_reaction('❌')
 
         # Расчет времени
         now = datetime.datetime.now()
@@ -187,8 +232,8 @@ async def on_reaction_add(reaction, user):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id) VALUES (?, ?, ?, ?)',
-            (boss_name, kill_time, respawn_time, message.id)
+            'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id, channel_id) VALUES (?, ?, ?, ?, ?)',
+            (boss_name, kill_time, respawn_time, message.id, channel.id)
         )
         conn.commit()
         conn.close()
@@ -229,23 +274,6 @@ async def on_reaction_add(reaction, user):
             conn.commit()
         conn.close()
 
-    # Обработка отметки об убийстве босса
-    if str(reaction.emoji) == "❌" and reaction.message.channel.name == "boss_alert":
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Помечаем босса как убитого
-        cursor.execute(
-            'UPDATE boss_kills SET is_killed = 1 WHERE message_id = ?',
-            (reaction.message.id,)
-        )
-        conn.commit()
-        conn.close()
-
-        # Удаляем реакции, чтобы нельзя было больше отмечаться
-        message = reaction.message
-        await message.clear_reactions()
-
 
 @bot.event
 async def on_reaction_remove(reaction, user):
@@ -271,6 +299,62 @@ async def on_reaction_remove(reaction, user):
         conn.close()
 
 
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        await bot.process_commands(message)
+        return
+
+    # Обработка ответов на сообщения о боссах
+    if message.reference and message.reference.message_id:
+        try:
+            # Получаем сообщение, на которое ответили
+            replied_message = await message.channel.fetch_message(message.reference.message_id)
+
+            # Проверяем, что это сообщение от бота и в канале boss_alert
+            if (replied_message.author == bot.user and
+                    replied_message.channel.name == "boss_alert" and
+                    "🔥 БОСС ПОЯВИЛСЯ!" in replied_message.content):
+
+                conn = get_db_connection()
+                cursor = conn.cursor()
+
+                # Проверяем, не убит ли уже босс
+                cursor.execute(
+                    'SELECT id, is_killed FROM boss_kills WHERE message_id = ?',
+                    (replied_message.id,)
+                )
+                boss_kill = cursor.fetchone()
+
+                if boss_kill and not boss_kill['is_killed']:
+                    # Помечаем босса как убитого
+                    cursor.execute(
+                        'UPDATE boss_kills SET is_killed = 1 WHERE id = ?',
+                        (boss_kill['id'],)
+                    )
+                    conn.commit()
+
+                    # Удаляем реакцию ✅ и добавляем ☠️
+                    await replied_message.clear_reactions()
+                    await replied_message.add_reaction('☠️')
+
+                    # Редактируем сообщение о боссе
+                    new_content = replied_message.content.replace(
+                        "💬 - Ответьте на это сообщение чтобы отметить убийство босса",
+                        "☠️ - Босс убит! Отметки участия закрыты."
+                    )
+                    await replied_message.edit(content=new_content)
+
+                    # Отправляем подтверждение
+                    await message.channel.send(f"{message.author.mention} отметил(а) убийство босса!")
+
+                conn.close()
+        except Exception as e:
+            print(f"Ошибка при обработке ответа на сообщение: {e}")
+
+    await bot.process_commands(message)
+
+
 @bot.command()
 async def boss_rate(ctx, member: discord.Member = None):
     if member is None:
@@ -285,7 +369,7 @@ async def boss_rate(ctx, member: discord.Member = None):
         'SELECT COUNT(*) FROM boss_kills WHERE kill_time LIKE ?',
         (f'{today}%',)
     )
-    total_bosses_today = cursor.fetchone()[0]
+    total_bosses_today = cursor.fetchone()[0] or 0
 
     cursor.execute(
         '''SELECT COUNT(*) FROM boss_attendance 
@@ -294,7 +378,7 @@ async def boss_rate(ctx, member: discord.Member = None):
            AND boss_kills.kill_time LIKE ?''',
         (member.id, f'{today}%')
     )
-    attended_today = cursor.fetchone()[0]
+    attended_today = cursor.fetchone()[0] or 0
 
     # Статистика за неделю
     week_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime("%d.%m.%y")
@@ -302,7 +386,7 @@ async def boss_rate(ctx, member: discord.Member = None):
         'SELECT COUNT(*) FROM boss_kills WHERE kill_time >= ?',
         (week_ago,)
     )
-    total_bosses_week = cursor.fetchone()[0]
+    total_bosses_week = cursor.fetchone()[0] or 0
 
     cursor.execute(
         '''SELECT COUNT(*) FROM boss_attendance 
@@ -311,13 +395,13 @@ async def boss_rate(ctx, member: discord.Member = None):
            AND boss_kills.kill_time >= ?''',
         (member.id, week_ago)
     )
-    attended_week = cursor.fetchone()[0]
+    attended_week = cursor.fetchone()[0] or 0
 
     # Общая статистика
     cursor.execute(
         'SELECT COUNT(*) FROM boss_kills'
     )
-    total_bosses = cursor.fetchone()[0]
+    total_bosses = cursor.fetchone()[0] or 0
 
     cursor.execute(
         '''SELECT COUNT(*) FROM boss_attendance 
@@ -325,7 +409,7 @@ async def boss_rate(ctx, member: discord.Member = None):
            WHERE boss_attendance.user_id = ? AND boss_attendance.attended = 1''',
         (member.id,)
     )
-    attended_total = cursor.fetchone()[0]
+    attended_total = cursor.fetchone()[0] or 0
 
     conn.close()
 
@@ -357,5 +441,3 @@ if __name__ == "__main__":
         bot.run(TOKEN)
     except Exception as e:
         print(f"Произошла ошибка при запуске бота: {e}")
-
-

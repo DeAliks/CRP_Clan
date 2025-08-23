@@ -2,3 +2,6 @@ discord
 python-dotenv
 keep_alive
 Flask
+pytesseract
+pillow
+aiohttp
