@@ -360,3 +360,5 @@ if __name__ == "__main__":
 
 
  # test For Artur changes
+ def test():
+     print('hello artur')
