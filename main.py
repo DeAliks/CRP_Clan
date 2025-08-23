@@ -357,3 +357,6 @@ if __name__ == "__main__":
         bot.run(TOKEN)
     except Exception as e:
         print(f"Произошла ошибка при запуске бота: {e}")
+
+
+ # test
