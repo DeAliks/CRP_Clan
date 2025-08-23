@@ -81,6 +81,45 @@ def get_db_connection():
     return conn
 
 
+# Функция для миграции базы данных
+def migrate_database():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Проверяем существование таблиц и добавляем недостающие колонки
+    cursor.execute("PRAGMA table_info(boss_kills)")
+    columns = [column[1] for column in cursor.fetchall()]
+
+    # Добавляем недостающие колонки в boss_kills
+    if 'is_killed' not in columns:
+        cursor.execute("ALTER TABLE boss_kills ADD COLUMN is_killed INTEGER DEFAULT 0")
+
+    if 'respawn_notified' not in columns:
+        cursor.execute("ALTER TABLE boss_kills ADD COLUMN respawn_notified INTEGER DEFAULT 0")
+
+    if 'channel_id' not in columns:
+        cursor.execute("ALTER TABLE boss_kills ADD COLUMN channel_id INTEGER")
+
+    # Проверяем существование таблицы boss_loot
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='boss_loot'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE boss_loot (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                boss_kill_id INTEGER,
+                user_id INTEGER,
+                username TEXT,
+                screenshot_path TEXT,
+                loot_text TEXT,
+                created_at TEXT,
+                FOREIGN KEY (boss_kill_id) REFERENCES boss_kills (id)
+            )
+        ''')
+
+    conn.commit()
+    conn.close()
+
+
 # Инициализация таблиц
 def init_db():
     conn = get_db_connection()
@@ -126,6 +165,9 @@ def init_db():
     conn.commit()
     conn.close()
 
+    # Выполняем миграцию для существующих баз данных
+    migrate_database()
+
 
 @bot.event
 async def on_ready():
@@ -137,41 +179,44 @@ async def on_ready():
 # Фоновая задача для проверки респавнов боссов
 @tasks.loop(minutes=5)
 async def check_respawns():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT id, boss_name, respawn, channel_id 
-        FROM boss_kills 
-        WHERE respawn_notified = 0 AND is_killed = 1
-    ''')
+        cursor.execute('''
+            SELECT id, boss_name, respawn, channel_id 
+            FROM boss_kills 
+            WHERE respawn_notified = 0 AND is_killed = 1
+        ''')
 
-    bosses_to_respawn = cursor.fetchall()
-    now = datetime.datetime.now()
+        bosses_to_respawn = cursor.fetchall()
+        now = datetime.datetime.now()
 
-    for boss in bosses_to_respawn:
-        respawn_time = datetime.datetime.strptime(boss['respawn'], "%d.%m.%y-%H:%M")
-
-        if now >= respawn_time:
+        for boss in bosses_to_respawn:
             try:
-                channel = bot.get_channel(boss['channel_id'])
-                if channel:
-                    await channel.send(
-                        f"@everyone\n"
-                        f"🔄 БОСС ВОЗРОДИЛСЯ!\n"
-                        f"{boss['boss_name']} снова доступен для убийства!\n"
-                        f"Используйте команду !spawn для отметки появления."
-                    )
+                respawn_time = datetime.datetime.strptime(boss['respawn'], "%d.%m.%y-%H:%M")
 
-                    cursor.execute(
-                        'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
-                        (boss['id'],)
-                    )
-                    conn.commit()
+                if now >= respawn_time:
+                    channel = bot.get_channel(boss['channel_id'])
+                    if channel:
+                        await channel.send(
+                            f"@everyone\n"
+                            f"🔄 БОСС ВОЗРОДИЛСЯ!\n"
+                            f"{boss['boss_name']} снова доступен для убийства!\n"
+                            f"Используйте команду !spawn для отметки появления."
+                        )
+
+                        cursor.execute(
+                            'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
+                            (boss['id'],)
+                        )
+                        conn.commit()
             except Exception as e:
-                print(f"Ошибка при отправке уведомления о респавне: {e}")
+                print(f"Ошибка при обработке респавна босса {boss['boss_name']}: {e}")
 
-    conn.close()
+        conn.close()
+    except Exception as e:
+        print(f"Ошибка в задаче check_respawns: {e}")
 
 
 # Функция для обработки изображений с помощью OCR
