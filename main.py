@@ -359,4 +359,4 @@ if __name__ == "__main__":
         print(f"Произошла ошибка при запуске бота: {e}")
 
 
- # test
+ # test For Artur changes
