@@ -10,6 +10,10 @@ import io
 from PIL import Image
 import pytesseract
 import re
+import numpy as np
+from PIL import Image, ImageFilter, ImageEnhance
+
+
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -599,6 +603,87 @@ async def boss_rate(ctx, member: discord.Member = None):
 
     await ctx.send(embed=embed)
 
+
+async def process_image_with_ocr(image_url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as resp:
+                if resp.status == 200:
+                    image_data = await resp.read()
+                    image = Image.open(io.BytesIO(image_data))
+
+                    # Конвертируем в RGB если нужно
+                    if image.mode != 'RGB':
+                        image = image.convert('RGB')
+
+                    # Улучшаем качество изображения для лучшего распознавания
+                    image = enhance_image_for_ocr(image)
+
+                    # Сохраняем временную копию для обработки
+                    temp_path = f"temp_images/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    image.save(temp_path, 'PNG')
+
+                    # Используем OCR для извлечения текста
+                    custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist="[]0123456789:abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ "'
+                    text = pytesseract.image_to_string(image, lang='eng', config=custom_config)
+
+                    # Ищем паттерны логов дропа
+                    loot_pattern = r'\[\d{2}:\d{2}\].+acquired.+from'
+                    loot_items = re.findall(loot_pattern, text)
+
+                    return loot_items, temp_path
+    except Exception as e:
+        print(f"Ошибка при обработке изображения: {e}")
+        return [], None
+
+
+def enhance_image_for_ocr(image):
+    """Улучшает изображение для лучшего распознавания текста"""
+    # Увеличиваем контрастность
+    enhancer = ImageEnhance.Contrast(image)
+    image = enhancer.enhance(2.0)
+
+    # Увеличиваем резкость
+    enhancer = ImageEnhance.Sharpness(image)
+    image = enhancer.enhance(2.0)
+
+    # Применяем фильтр для уменьшения шума
+    image = image.filter(ImageFilter.MedianFilter(3))
+
+    # Конвертируем в numpy array для обработки
+    img_array = np.array(image)
+
+    # Целевые цвета из HEX в RGB
+    background_color = np.array([15, 15, 18])  # #0f0f12
+    time_color = np.array([150, 150, 150])  # #969696
+    text_color = np.array([184, 184, 183])  # #b8b8b7
+    drop_colors = [
+        np.array([13, 108, 198]),  # #0d6cc6
+        np.array([73, 20, 116]),  # #491474
+        np.array([8, 153, 35]),  # #089923
+        np.array([173, 6, 7])  # #ad0607
+    ]
+
+    # Создаем маску для текста (все целевые цвета)
+    text_mask = np.zeros(img_array.shape[:2], dtype=bool)
+
+    # Добавляем цвета текста в маску
+    for color in [time_color, text_color] + drop_colors:
+        color_diff = np.sqrt(np.sum((img_array - color) ** 2, axis=2))
+        text_mask = text_mask | (color_diff < 50)  # допуск 50
+
+    # Создаем новое изображение с белым фоном и черным текстом
+    enhanced_array = np.ones_like(img_array) * 255  # белый фон
+    enhanced_array[text_mask] = [0, 0, 0]  # черный текст
+
+    # Конвертируем обратно в PIL Image
+    enhanced_image = Image.fromarray(enhanced_array.astype('uint8'))
+
+    # Дополнительное улучшение контраста
+    enhancer = ImageEnhance.Contrast(enhanced_image)
+    enhanced_image = enhancer.enhance(10.0)
+
+    return enhanced_image
 
 @bot.event
 async def on_command_error(ctx, error):

@@ -5,3 +5,5 @@ Flask
 pytesseract
 pillow
 aiohttp
+Image
+ImageFilter
