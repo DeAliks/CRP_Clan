@@ -1,4 +1,4 @@
-discord.py-self
+discord
 python-dotenv
 keep_alive
 Flask
