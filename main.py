@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 import asyncio
 import aiohttp
 import io
-from PIL import Image, ImageFilter, ImageEnhance
+from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 import pytesseract
 import re
 import numpy as np
-import cv2
+import colorsys
 import logging
 
 # Настройка логирования
@@ -24,6 +24,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -240,49 +241,93 @@ def save_debug_image(image, name):
     image.save(debug_path, 'PNG')
     return debug_path
 
+def enhance_gray(image):
+    """Вариант 1: простая бинаризация"""
+    img = image.convert("L")  # в серый
+    img = ImageOps.autocontrast(img)
+    img = ImageOps.invert(img)  # текст становится чёрным
+    enhancer = ImageEnhance.Sharpness(img)
+    img = enhancer.enhance(2.0)
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(2.0)
+    return img
+
+def enhance_hsv(image):
+    """Вариант 2: HSV фильтрация цветного текста"""
+    img = image.convert("RGB")
+    img_array = np.array(img)
+
+    # RGB → HSV
+    hsv_array = np.zeros_like(img_array, dtype=float)
+    for y in range(img_array.shape[0]):
+        for x in range(img_array.shape[1]):
+            r, g, b = img_array[y, x] / 255.0
+            h, s, v = colorsys.rgb_to_hsv(r, g, b)
+            hsv_array[y, x] = [h * 360, s * 100, v * 100]
+
+    # Диапазоны цветов (H, S, V)
+    ranges = [
+        ((0, 10),   (50, 100), (30, 100)),   # красный 1
+        ((340, 360),(50, 100), (30, 100)),   # красный 2
+        ((80, 150), (30, 100), (30, 100)),   # зелёный
+        ((180, 260),(30, 100), (30, 100)),   # синий
+        ((260, 320),(30, 100), (30, 100)),   # фиолетовый
+        ((30, 70),  (30, 100), (30, 100)),   # жёлтый
+        ((0, 360),  (0, 20),   (40, 100)),   # серый/белый обычный текст
+    ]
+
+    # Маска текста
+    h, s, v = hsv_array[:,:,0], hsv_array[:,:,1], hsv_array[:,:,2]
+    text_mask = np.zeros(img_array.shape[:2], dtype=bool)
+    for h_range, s_range, v_range in ranges:
+        mask = ((h >= h_range[0]) & (h <= h_range[1]) &
+                (s >= s_range[0]) & (s <= s_range[1]) &
+                (v >= v_range[0]) & (v <= v_range[1]))
+        text_mask |= mask
+
+    # Чёрный текст на белом фоне
+    enhanced_array = np.ones_like(img_array) * 255
+    enhanced_array[text_mask] = [0, 0, 0]
+    return Image.fromarray(enhanced_array.astype("uint8"))
 
 def enhance_image_for_ocr(image):
-    """Улучшает изображение для лучшего распознавания текста с использованием OpenCV"""
-    # Сохраняем исходное изображение
+    """Гибрид: пробуем два метода и выбираем лучший"""
+    # Сохраняем оригинал
     original_path = save_debug_image(image, "01_original")
     logger.info(f"Сохранено исходное изображение: {original_path}")
 
-    # Конвертируем в оттенки серого
-    if image.mode != 'L':
-        image = image.convert('L')
-    gray_path = save_debug_image(image, "02_gray")
-    logger.info(f"Сохранено изображение в оттенках серого: {gray_path}")
+    # Пробуем оба метода
+    gray_variant = enhance_gray(image)
+    hsv_variant = enhance_hsv(image)
 
-    # Конвертируем PIL Image в numpy array для OpenCV
-    img_array = np.array(image)
+    # Сохраняем оба варианта для отладки
+    gray_path = save_debug_image(gray_variant, "02_gray_method")
+    logger.info(f"Сохранено изображение после серого метода: {gray_path}")
+    hsv_path = save_debug_image(hsv_variant, "03_hsv_method")
+    logger.info(f"Сохранено изображение после HSV метода: {hsv_path}")
 
-    # Применяем бинаризацию Оцу
-    _, img_bin = cv2.threshold(img_array, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    bin_path = save_debug_image(Image.fromarray(img_bin), "03_binarized")
-    logger.info(f"Сохранено бинаризированное изображение: {bin_path}")
+    # Проверяем OCR на обоих
+    custom_config = r'--oem 3 --psm 6'
+    text_gray = pytesseract.image_to_string(gray_variant, lang='eng', config=custom_config)
+    text_hsv = pytesseract.image_to_string(hsv_variant, lang='eng', config=custom_config)
 
-    # Применяем морфологическое закрытие для соединения разрывов в тексте
-    kernel = np.ones((2, 2), np.uint8)
-    img_morph = cv2.morphologyEx(img_bin, cv2.MORPH_CLOSE, kernel)
-    morph_path = save_debug_image(Image.fromarray(img_morph), "04_morph")
-    logger.info(f"Сохранено изображение после морфологической обработки: {morph_path}")
+    # Выбираем лучший по количеству символов
+    if len(text_hsv.strip()) > len(text_gray.strip()):
+        best_img = hsv_variant
+        best_text = text_hsv
+        method = "HSV"
+    else:
+        best_img = gray_variant
+        best_text = text_gray
+        method = "GRAY"
 
-    # Увеличиваем контраст (но не слишком сильно)
-    img_contrast = cv2.convertScaleAbs(img_morph, alpha=1.5, beta=0)
-    contrast_path = save_debug_image(Image.fromarray(img_contrast), "05_contrast")
-    logger.info(f"Сохранено изображение после увеличения контраста: {contrast_path}")
+    logger.info(f"Выбран метод {method}, количество символов: {len(best_text.strip())}")
 
-    # Конвертируем обратно в PIL Image
-    enhanced_image = Image.fromarray(img_contrast)
-
-    # Дополнительная обработка с помощью PIL (если нужно)
-    enhancer = ImageEnhance.Sharpness(enhanced_image)
-    enhanced_image = enhancer.enhance(1.2)
-
-    final_path = save_debug_image(enhanced_image, "06_final")
+    # Сохраняем финальное изображение
+    final_path = save_debug_image(best_img, "04_final")
     logger.info(f"Сохранено финальное изображение: {final_path}")
 
-    return enhanced_image
+    return best_img
 
 
 async def process_image_with_ocr(image_url):
