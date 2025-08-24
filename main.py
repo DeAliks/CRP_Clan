@@ -25,7 +25,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 # Загрузка переменных окружения
 load_dotenv()
 
@@ -241,6 +240,7 @@ def save_debug_image(image, name):
     image.save(debug_path, 'PNG')
     return debug_path
 
+
 def enhance_gray(image):
     """Вариант 1: простая бинаризация"""
     img = image.convert("L")  # в серый
@@ -251,6 +251,7 @@ def enhance_gray(image):
     enhancer = ImageEnhance.Contrast(img)
     img = enhancer.enhance(2.0)
     return img
+
 
 def enhance_hsv(image):
     """Вариант 2: HSV фильтрация цветного текста"""
@@ -289,6 +290,7 @@ def enhance_hsv(image):
     enhanced_array = np.ones_like(img_array) * 255
     enhanced_array[text_mask] = [0, 0, 0]
     return Image.fromarray(enhanced_array.astype("uint8"))
+
 
 def enhance_image_for_ocr(image):
     """Гибрид: пробуем два метода и выбираем лучший"""
