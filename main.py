@@ -172,6 +172,7 @@ async def on_ready():
 
 
 # Фоновая задача для проверки респавнов боссов
+# Фоновая задача для проверки респавнов боссов
 @tasks.loop(minutes=5)
 async def check_respawns():
     try:
@@ -194,19 +195,37 @@ async def check_respawns():
                 if now >= respawn_time:
                     channel = bot.get_channel(boss['channel_id'])
                     if channel:
-                        await channel.send(
+                        # Отправляем прямое уведомление о появлении босса
+                        message = await channel.send(
                             f"@everyone\n"
-                            f"🔄 БОСС ВОЗРОДИЛСЯ!\n"
-                            f"{boss['boss_name']} снова доступен для убийства!\n"
-                            f"Используйте команду !spawn для отметки появления."
+                            f"🔥 БОСС ПОЯВИЛСЯ!\n"
+                            f"{boss['boss_name']} - сейчас появится\n\n"
+                            f"Поставьте реакцию ✅ для отметки участия на боссе\n\n"
+                            f"📍 Действия\n"
+                            f"✅ - Участвую в убийстве босса\n"
+                            f"💬 - Ответьте на это сообщение со скриншотом дропа чтобы отметить убийство босса"
                         )
 
+                        await message.add_reaction('✅')
+
+                        # Создаем новую запись в базе данных для нового появления босса
+                        new_kill_time = (now + datetime.timedelta(minutes=5)).strftime("%d.%m.%y-%H:%M")
+                        respawn_hours = BOSS_RESPAWNS.get(boss['boss_name'], 24)  # Значение по умолчанию 24 часа
+                        new_respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%d.%m.%y-%H:%M")
+
+                        cursor.execute(
+                            'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id, channel_id) VALUES (?, ?, ?, ?, ?)',
+                            (boss['boss_name'], new_kill_time, new_respawn_time, message.id, channel.id)
+                        )
+
+                        # Помечаем старую запись как обработанную
                         cursor.execute(
                             'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
                             (boss['id'],)
                         )
+
                         conn.commit()
-                        logger.info(f"Уведомление о респавне отправлено для {boss['boss_name']}")
+                        logger.info(f"Автоматически создано уведомление о появлении босса {boss['boss_name']}")
             except Exception as e:
                 logger.error(f"Ошибка при обработке респавна босса {boss['boss_name']}: {e}")
 
