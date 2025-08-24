@@ -7,3 +7,4 @@ pillow
 aiohttp
 Image
 ImageFilter
+numpy

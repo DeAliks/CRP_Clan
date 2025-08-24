@@ -11,6 +11,7 @@ from PIL import Image, ImageFilter, ImageEnhance
 import pytesseract
 import re
 import numpy as np
+import cv2
 import logging
 
 # Настройка логирования
@@ -172,7 +173,6 @@ async def on_ready():
 
 
 # Фоновая задача для проверки респавнов боссов
-# Фоновая задача для проверки респавнов боссов
 @tasks.loop(minutes=5)
 async def check_respawns():
     try:
@@ -242,62 +242,43 @@ def save_debug_image(image, name):
 
 
 def enhance_image_for_ocr(image):
-    """Улучшает изображение для лучшего распознавания текста"""
+    """Улучшает изображение для лучшего распознавания текста с использованием OpenCV"""
     # Сохраняем исходное изображение
     original_path = save_debug_image(image, "01_original")
     logger.info(f"Сохранено исходное изображение: {original_path}")
 
-    # Увеличиваем контрастность
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(2.0)
-    contrast_path = save_debug_image(image, "02_contrast")
-    logger.info(f"Сохранено изображение после контраста: {contrast_path}")
+    # Конвертируем в оттенки серого
+    if image.mode != 'L':
+        image = image.convert('L')
+    gray_path = save_debug_image(image, "02_gray")
+    logger.info(f"Сохранено изображение в оттенках серого: {gray_path}")
 
-    # Увеличиваем резкость
-    enhancer = ImageEnhance.Sharpness(image)
-    image = enhancer.enhance(2.0)
-    sharpness_path = save_debug_image(image, "03_sharpness")
-    logger.info(f"Сохранено изображение после резкости: {sharpness_path}")
-
-    # Применяем фильтр для уменьшения шума
-    image = image.filter(ImageFilter.MedianFilter(3))
-    filtered_path = save_debug_image(image, "04_filtered")
-    logger.info(f"Сохранено изображение после фильтра: {filtered_path}")
-
-    # Конвертируем в numpy array для обработки
+    # Конвертируем PIL Image в numpy array для OpenCV
     img_array = np.array(image)
 
-    # Целевые цвета из HEX в RGB
-    background_color = np.array([15, 15, 18])  # #0f0f12
-    time_color = np.array([150, 150, 150])  # #969696
-    text_color = np.array([184, 184, 183])  # #b8b8b7
-    drop_colors = [
-        np.array([13, 108, 198]),  # #0d6cc6
-        np.array([73, 20, 116]),  # #491474
-        np.array([8, 153, 35]),  # #089923
-        np.array([173, 6, 7])  # #ad0607
-    ]
+    # Применяем бинаризацию Оцу
+    _, img_bin = cv2.threshold(img_array, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    bin_path = save_debug_image(Image.fromarray(img_bin), "03_binarized")
+    logger.info(f"Сохранено бинаризированное изображение: {bin_path}")
 
-    # Создаем маску для текста (все целевые цвета)
-    text_mask = np.zeros(img_array.shape[:2], dtype=bool)
+    # Применяем морфологическое закрытие для соединения разрывов в тексте
+    kernel = np.ones((2, 2), np.uint8)
+    img_morph = cv2.morphologyEx(img_bin, cv2.MORPH_CLOSE, kernel)
+    morph_path = save_debug_image(Image.fromarray(img_morph), "04_morph")
+    logger.info(f"Сохранено изображение после морфологической обработки: {morph_path}")
 
-    # Добавляем цвета текста в маску
-    for color in [time_color, text_color] + drop_colors:
-        color_diff = np.sqrt(np.sum((img_array - color) ** 2, axis=2))
-        text_mask = text_mask | (color_diff < 50)  # допуск 50
-
-    # Создаем новое изображение с белым фоном и черным текстом
-    enhanced_array = np.ones_like(img_array) * 255  # белый фон
-    enhanced_array[text_mask] = [0, 0, 0]  # черный текст
+    # Увеличиваем контраст (но не слишком сильно)
+    img_contrast = cv2.convertScaleAbs(img_morph, alpha=1.5, beta=0)
+    contrast_path = save_debug_image(Image.fromarray(img_contrast), "05_contrast")
+    logger.info(f"Сохранено изображение после увеличения контраста: {contrast_path}")
 
     # Конвертируем обратно в PIL Image
-    enhanced_image = Image.fromarray(enhanced_array.astype('uint8'))
-    color_filtered_path = save_debug_image(enhanced_image, "05_color_filtered")
-    logger.info(f"Сохранено изображение после цветовой фильтрации: {color_filtered_path}")
+    enhanced_image = Image.fromarray(img_contrast)
 
-    # Дополнительное улучшение контраста
-    enhancer = ImageEnhance.Contrast(enhanced_image)
-    enhanced_image = enhancer.enhance(10.0)
+    # Дополнительная обработка с помощью PIL (если нужно)
+    enhancer = ImageEnhance.Sharpness(enhanced_image)
+    enhanced_image = enhancer.enhance(1.2)
+
     final_path = save_debug_image(enhanced_image, "06_final")
     logger.info(f"Сохранено финальное изображение: {final_path}")
 
@@ -326,16 +307,35 @@ async def process_image_with_ocr(image_url):
                     image.save(temp_path, 'PNG')
                     logger.info(f"Сохранено временное изображение: {temp_path}")
 
-                    # Используем OCR для извлечения текста
-                    custom_config = r'--oem 3 --psm 6'
-                    text = pytesseract.image_to_string(image, lang='eng', config=custom_config)
+                    # Используем OCR для извлечения текста с разными настройками
+                    configs = [
+                        r'--oem 3 --psm 6',
+                        r'--oem 3 --psm 7',
+                        r'--oem 3 --psm 8',
+                        r'--oem 3 --psm 13'
+                    ]
 
-                    # Логируем распознанный текст
-                    logger.info(f"Распознанный текст:\n{text}")
+                    best_text = ""
+                    best_config = ""
+
+                    for config in configs:
+                        try:
+                            text = pytesseract.image_to_string(image, lang='eng', config=config)
+                            logger.info(f"Распознанный текст с конфигом {config}:\n{text}")
+
+                            # Если этот конфиг дал больше текста, сохраняем его
+                            if len(text) > len(best_text):
+                                best_text = text
+                                best_config = config
+                        except Exception as e:
+                            logger.error(f"Ошибка при распознавании с конфигом {config}: {e}")
+
+                    logger.info(f"Лучший конфиг: {best_config}")
+                    logger.info(f"Лучший распознанный текст:\n{best_text}")
 
                     # Ищем паттерны логов дропа
                     loot_pattern = r'\[\d{2}:\d{2}\].+acquired.+from'
-                    loot_items = re.findall(loot_pattern, text)
+                    loot_items = re.findall(loot_pattern, best_text)
 
                     logger.info(f"Найденные предметы: {loot_items}")
 
