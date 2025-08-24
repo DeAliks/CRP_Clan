@@ -8,3 +8,4 @@ aiohttp
 Image
 ImageFilter
 numpy
+opencv-python
