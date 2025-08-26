@@ -14,6 +14,8 @@ import numpy as np
 import colorsys
 import logging
 
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -241,8 +243,30 @@ def save_debug_image(image, name):
     return debug_path
 
 
+def extract_items(text):
+    """Извлекает названия предметов между 'acquired' и 'from'"""
+    logger.info("Извлекаем названия предметов из текста")
+
+    # Регулярное выражение для поиска текста между "acquired" и "from"
+    pattern = r'acquired\s+(.*?)\s+from'
+    items = re.findall(pattern, text, re.IGNORECASE)
+
+    # Очищаем результаты
+    cleaned_items = []
+    for item in items:
+        # Убираем лишние пробелы и переносы строк
+        cleaned_item = ' '.join(item.split())
+        # Убираем возможные точки и запятые в конце
+        cleaned_item = cleaned_item.rstrip('.,')
+        cleaned_items.append(cleaned_item)
+
+    logger.info(f"Найдено {len(cleaned_items)} предметов")
+    return cleaned_items
+
+
 def enhance_gray(image):
     """Вариант 1: простая бинаризация"""
+    logger.info("Применяем серый метод обработки")
     img = image.convert("L")  # в серый
     img = ImageOps.autocontrast(img)
     img = ImageOps.invert(img)  # текст становится чёрным
@@ -255,6 +279,7 @@ def enhance_gray(image):
 
 def enhance_hsv(image):
     """Вариант 2: HSV фильтрация цветного текста"""
+    logger.info("Применяем HSV метод обработки")
     img = image.convert("RGB")
     img_array = np.array(img)
 
@@ -268,17 +293,17 @@ def enhance_hsv(image):
 
     # Диапазоны цветов (H, S, V)
     ranges = [
-        ((0, 10),   (50, 100), (30, 100)),   # красный 1
-        ((340, 360),(50, 100), (30, 100)),   # красный 2
-        ((80, 150), (30, 100), (30, 100)),   # зелёный
-        ((180, 260),(30, 100), (30, 100)),   # синий
-        ((260, 320),(30, 100), (30, 100)),   # фиолетовый
-        ((30, 70),  (30, 100), (30, 100)),   # жёлтый
-        ((0, 360),  (0, 20),   (40, 100)),   # серый/белый обычный текст
+        ((0, 10), (50, 100), (30, 100)),  # красный 1
+        ((340, 360), (50, 100), (30, 100)),  # красный 2
+        ((80, 150), (30, 100), (30, 100)),  # зелёный
+        ((180, 260), (30, 100), (30, 100)),  # синий
+        ((260, 320), (30, 100), (30, 100)),  # фиолетовый
+        ((30, 70), (30, 100), (30, 100)),  # жёлтый
+        ((0, 360), (0, 20), (40, 100)),  # серый/белый обычный текст
     ]
 
     # Маска текста
-    h, s, v = hsv_array[:,:,0], hsv_array[:,:,1], hsv_array[:,:,2]
+    h, s, v = hsv_array[:, :, 0], hsv_array[:, :, 1], hsv_array[:, :, 2]
     text_mask = np.zeros(img_array.shape[:2], dtype=bool)
     for h_range, s_range, v_range in ranges:
         mask = ((h >= h_range[0]) & (h <= h_range[1]) &
@@ -318,18 +343,18 @@ def enhance_image_for_ocr(image):
         best_img = hsv_variant
         best_text = text_hsv
         method = "HSV"
+        logger.info(f"Выбран метод HSV, количество символов: {len(text_hsv.strip())}")
     else:
         best_img = gray_variant
         best_text = text_gray
         method = "GRAY"
-
-    logger.info(f"Выбран метод {method}, количество символов: {len(best_text.strip())}")
+        logger.info(f"Выбран метод GRAY, количество символов: {len(text_gray.strip())}")
 
     # Сохраняем финальное изображение
-    final_path = save_debug_image(best_img, "04_final")
+    final_path = save_debug_image(best_img, f"04_final_{method}")
     logger.info(f"Сохранено финальное изображение: {final_path}")
 
-    return best_img
+    return best_img, best_text, method
 
 
 async def process_image_with_ocr(image_url):
@@ -347,11 +372,14 @@ async def process_image_with_ocr(image_url):
                         image = image.convert('RGB')
 
                     # Улучшаем качество изображения для лучшего распознавания
-                    image = enhance_image_for_ocr(image)
+                    enhanced_image, text, method = enhance_image_for_ocr(image)
+
+                    # Извлекаем предметы из текста
+                    items = extract_items(text)
 
                     # Сохраняем временную копию для обработки
                     temp_path = f"temp_images/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                    image.save(temp_path, 'PNG')
+                    enhanced_image.save(temp_path, 'PNG')
                     logger.info(f"Сохранено временное изображение: {temp_path}")
 
                     # Используем OCR для извлечения текста с разными настройками
@@ -362,17 +390,17 @@ async def process_image_with_ocr(image_url):
                         r'--oem 3 --psm 13'
                     ]
 
-                    best_text = ""
+                    best_text = text
                     best_config = ""
 
                     for config in configs:
                         try:
-                            text = pytesseract.image_to_string(image, lang='eng', config=config)
-                            logger.info(f"Распознанный текст с конфигом {config}:\n{text}")
+                            new_text = pytesseract.image_to_string(enhanced_image, lang='eng', config=config)
+                            logger.info(f"Распознанный текст с конфигом {config}:\n{new_text}")
 
                             # Если этот конфиг дал больше текста, сохраняем его
-                            if len(text) > len(best_text):
-                                best_text = text
+                            if len(new_text) > len(best_text):
+                                best_text = new_text
                                 best_config = config
                         except Exception as e:
                             logger.error(f"Ошибка при распознавании с конфигом {config}: {e}")
@@ -380,13 +408,10 @@ async def process_image_with_ocr(image_url):
                     logger.info(f"Лучший конфиг: {best_config}")
                     logger.info(f"Лучший распознанный текст:\n{best_text}")
 
-                    # Ищем паттерны логов дропа
-                    loot_pattern = r'\[\d{2}:\d{2}\].+acquired.+from'
-                    loot_items = re.findall(loot_pattern, best_text)
+                    # Извлекаем предметы из лучшего текста
+                    final_items = extract_items(best_text)
 
-                    logger.info(f"Найденные предметы: {loot_items}")
-
-                    return loot_items, temp_path
+                    return final_items, temp_path
                 else:
                     logger.error(f"Ошибка загрузки изображения: статус {resp.status}")
                     return [], None
@@ -713,7 +738,7 @@ async def boss_rate(ctx, member: discord.Member = None):
            INNER JOIN boss_kills ON boss_attendance.boss_kill_id = boss_kills.id 
            WHERE boss_attendance.user_id = ? AND boss_attendance.attended = 1 
            AND boss_kills.kill_time LIKE ?''',
-        (member.id, f'{today}%')
+        (member.id, f'{today}%',)
     )
     attended_today = cursor.fetchone()[0] or 0
 
