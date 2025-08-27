@@ -181,10 +181,16 @@ async def check_respawns():
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Получаем только актуальные записи (последнее убийство для каждого босса)
         cursor.execute('''
-            SELECT id, boss_name, respawn, channel_id 
-            FROM boss_kills 
-            WHERE respawn_notified = 0 AND is_killed = 1
+            SELECT bk1.* 
+            FROM boss_kills bk1
+            INNER JOIN (
+                SELECT boss_name, MAX(id) as max_id
+                FROM boss_kills
+                GROUP BY boss_name
+            ) bk2 ON bk1.id = bk2.max_id
+            WHERE bk1.respawn_notified = 0 AND bk1.is_killed = 1
         ''')
 
         bosses_to_respawn = cursor.fetchall()
@@ -234,7 +240,6 @@ async def check_respawns():
         conn.close()
     except Exception as e:
         logger.error(f"Ошибка в задаче check_respawns: {e}")
-
 
 def save_debug_image(image, name):
     """Сохраняет изображение для отладки"""
@@ -470,6 +475,15 @@ async def on_reaction_add(reaction, user):
         if not channel:
             channel = reaction.message.channel
 
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Помечаем все предыдущие записи этого босса как неактуальные
+        cursor.execute(
+            'UPDATE boss_kills SET is_killed = 1, respawn_notified = 1 WHERE boss_name = ? AND is_killed = 0',
+            (boss_name,)
+        )
+
         message = await channel.send(
             f"@everyone\n"
             f"🔥 БОСС ПОЯВИЛСЯ!\n"
@@ -487,8 +501,6 @@ async def on_reaction_add(reaction, user):
         respawn_hours = BOSS_RESPAWNS[boss_name]
         respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%d.%m.%y-%H:%M")
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
         cursor.execute(
             'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id, channel_id) VALUES (?, ?, ?, ?, ?)',
             (boss_name, kill_time, respawn_time, message.id, channel.id)
@@ -504,10 +516,22 @@ async def on_reaction_add(reaction, user):
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        cursor.execute(
-            'SELECT id, is_killed FROM boss_kills WHERE message_id = ?',
-            (reaction.message.id,)
-        )
+        # Получаем только актуальную запись (последнее появление босса)
+        cursor.execute('''
+            SELECT id, is_killed 
+            FROM boss_kills 
+            WHERE message_id = ? 
+            AND id = (
+                SELECT MAX(id) 
+                FROM boss_kills 
+                WHERE boss_name = (
+                    SELECT boss_name 
+                    FROM boss_kills 
+                    WHERE message_id = ?
+                )
+            )
+        ''', (reaction.message.id, reaction.message.id))
+
         boss_kill = cursor.fetchone()
 
         if boss_kill and not boss_kill['is_killed']:
@@ -559,8 +583,6 @@ async def on_reaction_remove(reaction, user):
         conn.close()
 
 
-# ... (предыдущий код без изменений)
-
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -579,10 +601,22 @@ async def on_message(message):
                 conn = get_db_connection()
                 cursor = conn.cursor()
 
-                cursor.execute(
-                    'SELECT id, is_killed FROM boss_kills WHERE message_id = ?',
-                    (replied_message.id,)
-                )
+                # Получаем только актуальную запись (последнее появление босса)
+                cursor.execute('''
+                    SELECT id, is_killed 
+                    FROM boss_kills 
+                    WHERE message_id = ? 
+                    AND id = (
+                        SELECT MAX(id) 
+                        FROM boss_kills 
+                        WHERE boss_name = (
+                            SELECT boss_name 
+                            FROM boss_kills 
+                            WHERE message_id = ?
+                        )
+                    )
+                ''', (replied_message.id, replied_message.id))
+
                 boss_kill = cursor.fetchone()
 
                 if boss_kill and not boss_kill['is_killed']:
@@ -685,7 +719,6 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-# ... (остальной код без изменений)
 
 
 # Команда для просмотра дропа с босса
