@@ -559,6 +559,8 @@ async def on_reaction_remove(reaction, user):
         conn.close()
 
 
+# ... (предыдущий код без изменений)
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -631,14 +633,43 @@ async def on_message(message):
 
                     # Отправляем подтверждение с информацией о дропе
                     if loot_items:
-                        loot_info = "\n".join([f"• {item}" for item in loot_items[:5]])
-                        if len(loot_items) > 5:
-                            loot_info += f"\n• ... и еще {len(loot_items) - 5} предметов"
+                        # Формируем полный список предметов (без ограничения в 5 элементов)
+                        loot_info = "\n".join([f"• {item}" for item in loot_items])
 
-                        await message.channel.send(
-                            f"{message.author.mention} отметил(а) убийство босса!\n"
-                            f"📦 Выбитые предметы:\n{loot_info}"
-                        )
+                        # Если предметов много, разбиваем на несколько сообщений (ограничение Discord - 2000 символов)
+                        if len(loot_info) > 1900:
+                            # Разбиваем на части
+                            parts = []
+                            current_part = ""
+
+                            for item in loot_items:
+                                item_line = f"• {item}\n"
+                                if len(current_part) + len(item_line) > 1900:
+                                    parts.append(current_part)
+                                    current_part = item_line
+                                else:
+                                    current_part += item_line
+
+                            if current_part:
+                                parts.append(current_part)
+
+                            # Отправляем первое сообщение с информацией
+                            await message.channel.send(
+                                f"{message.author.mention} отметил(а) убийство босса!\n"
+                                f"📦 Выбитые предметы (часть 1 из {len(parts)}):\n{parts[0]}"
+                            )
+
+                            # Отправляем остальные части
+                            for i, part in enumerate(parts[1:], 2):
+                                await message.channel.send(
+                                    f"📦 Выбитые предметы (часть {i} из {len(parts)}):\n{part}"
+                                )
+                        else:
+                            await message.channel.send(
+                                f"{message.author.mention} отметил(а) убийство босса!\n"
+                                f"📦 Выбитые предметы:\n{loot_info}"
+                            )
+
                         logger.info(f"Успешно распознаны предметы: {loot_items}")
                     else:
                         await message.channel.send(
@@ -652,6 +683,9 @@ async def on_message(message):
             logger.error(f"Ошибка при обработке ответа на сообщение: {e}")
 
     await bot.process_commands(message)
+
+
+# ... (остальной код без изменений)
 
 
 # Команда для просмотра дропа с босса
