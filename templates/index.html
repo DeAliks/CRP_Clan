@@ -1,0 +1,75 @@
+$def with (upcoming_bosses, top_bosses, top_players)
+
+<div class="grid">
+    <div class="card">
+        <h2>Ближайшие боссы (24 часа)</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Босс</th>
+                    <th>Время респавна</th>
+                </tr>
+            </thead>
+            <tbody>
+                $if upcoming_bosses:
+                    $for boss in upcoming_bosses:
+                        <tr>
+                            <td>$boss['boss_name']</td>
+                            <td>$boss['respawn']</td>
+                        </tr>
+                $else:
+                    <tr>
+                        <td colspan="2">Нет предстоящих боссов</td>
+                    </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Топ боссов по убийствам</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Босс</th>
+                    <th>Количество убийств</th>
+                </tr>
+            </thead>
+            <tbody>
+                $if top_bosses:
+                    $for boss in top_bosses:
+                        <tr>
+                            <td>$boss['boss_name']</td>
+                            <td>$boss['kill_count']</td>
+                        </tr>
+                $else:
+                    <tr>
+                        <td colspan="2">Нет данных о боссах</td>
+                    </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Топ игроков за неделю</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Игрок</th>
+                    <th>Посещений рейдов</th>
+                </tr>
+            </thead>
+            <tbody>
+                $if top_players:
+                    $for player in top_players:
+                        <tr>
+                            <td>$player['username']</td>
+                            <td>$player['attendance_count']</td>
+                        </tr>
+                $else:
+                    <tr>
+                        <td colspan="2">Нет данных об игроках</td>
+                    </tr>
+            </tbody>
+        </table>
+    </div>
+</div>

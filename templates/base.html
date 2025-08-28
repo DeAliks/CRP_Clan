@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRP Clan Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dark-theme.css">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <h2>CRP Clan</h2>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="/" class="nav-link">Главная</a></li>
+                <li class="nav-item"><a href="/loot" class="nav-link">Дроп</a></li>
+                <li class="nav-item"><a href="/stats" class="nav-link">Статистика</a></li>
+                <li class="nav-item"><a href="/admin" class="nav-link">Появление босса</a></li>
+                $if web.ctx.session.get('user_id'):
+                    <li class="nav-item"><a href="/logout" class="nav-link">Выйти</a></li>
+                $else:
+                    <li class="nav-item"><a href="/login" class="nav-link">Войти</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        $:content
+    </main>
+
+    <footer class="footer">
+        <p>CRP Clan Dashboard &copy; 2025</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,27 @@
+$def with (loot_data)
+
+<div class="card">
+    <h2>Последний дроп с боссов</h2>
+    $if loot_data:
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Босс</th>
+                    <th>Игрок</th>
+                    <th>Предметы</th>
+                    <th>Время</th>
+                </tr>
+            </thead>
+            <tbody>
+                $for loot in loot_data:
+                    <tr>
+                        <td>$loot['boss_name']</td>
+                        <td>$loot['username']</td>
+                        <td>$loot['loot_text']</td>
+                        <td>$loot['created_at']</td>
+                    </tr>
+            </tbody>
+        </table>
+    $else:
+        <p>Нет данных о дропе</p>
+</div>

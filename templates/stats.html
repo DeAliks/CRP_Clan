@@ -1,0 +1,34 @@
+$def with (player_stats, time_range)
+
+<div class="card">
+    <h2>Статистика игроков ($time_range)</h2>
+
+    <div class="form-group">
+        <label class="form-label">Период:</label>
+        <select onchange="window.location.href='/stats?range=' + this.value">
+            <option value="week" $:{'selected' if time_range == 'week' else ''}>Эта неделя</option>
+            <option value="last_week" $:{'selected' if time_range == 'last_week' else ''}>Прошлая неделя</option>
+            <option value="month" $:{'selected' if time_range == 'month' else ''}>Этот месяц</option>
+            <option value="all" $:{'selected' if time_range == 'all' else ''}>Все время</option>
+        </select>
+    </div>
+
+    $if player_stats:
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Игрок</th>
+                    <th>Посещений рейдов</th>
+                </tr>
+            </thead>
+            <tbody>
+                $for player in player_stats:
+                    <tr>
+                        <td>$player['username']</td>
+                        <td>$player['attendance_count']</td>
+                    </tr>
+            </tbody>
+        </table>
+    $else:
+        <p>Нет данных об игроках за выбранный период</p>
+</div>

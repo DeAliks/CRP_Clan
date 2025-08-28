@@ -13,6 +13,8 @@ import re
 import numpy as np
 import colorsys
 import logging
+import threading
+from database import init_db, get_db_connection
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -76,6 +78,23 @@ os.makedirs('temp_images', exist_ok=True)
 os.makedirs('debug_images', exist_ok=True)  # Для отладочных изображений
 
 
+# Запуск веб-сервера в отдельном потоке
+def run_web_app():
+    import web_app
+    web_app.app.run()
+
+
+@bot.event
+async def on_ready():
+    logger.info(f'Бот {bot.user} запущен!')
+    init_db()
+    check_respawns.start()
+
+    # Запускаем веб-сервер в отдельном потоке
+    web_thread = threading.Thread(target=run_web_app)
+    web_thread.daemon = True
+    web_thread.start()
+    logger.info("Веб-сервер запущен на http://0.0.0.0:8080")
 # Подключение к БД
 def get_db_connection():
     conn = sqlite3.connect('crp_clan.db')
