@@ -1,27 +1,48 @@
 $def with (loot_data)
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRP Clan - Дроп</title>
+    <link rel="stylesheet" href="/static/css/dark-theme.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="/" class="nav-link">Главная</a></li>
+                <li class="nav-item"><a href="/loot" class="nav-link">Дроп</a></li>
+                <li class="nav-item"><a href="/stats" class="nav-link">Статистика</a></li>
+                <li class="nav-item"><a href="/admin" class="nav-link">Админка</a></li>
+            </ul>
+        </div>
+    </nav>
 
-<div class="card">
-    <h2>Последний дроп с боссов</h2>
-    $if loot_data:
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Босс</th>
-                    <th>Игрок</th>
-                    <th>Предметы</th>
-                    <th>Время</th>
-                </tr>
-            </thead>
-            <tbody>
-                $for loot in loot_data:
-                    <tr>
-                        <td>$loot['boss_name']</td>
-                        <td>$loot['username']</td>
-                        <td>$loot['loot_text']</td>
-                        <td>$loot['created_at']</td>
-                    </tr>
-            </tbody>
-        </table>
-    $else:
-        <p>Нет данных о дропе</p>
-</div>
+    <div class="main-content">
+        <div class="card">
+            <h2>Последний дроп с боссов</h2>
+            $if loot_data:
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Босс</th>
+                            <th>Игрок</th>
+                            <th>Предметы</th>
+                            <th>Время</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        $for loot in loot_data:
+                            <tr>
+                                <td>$loot['boss_name']</td>
+                                <td>$loot['username']</td>
+                                <td>$loot['loot_text']</td>
+                                <td>$loot['created_at']</td>
+                            </tr>
+                    </tbody>
+                </table>
+            $else:
+                <p>Нет данных о дропе</p>
+        </div>
+    </div>
+</body>
+</html>

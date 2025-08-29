@@ -1,22 +1,42 @@
-$def with ()
-
-<div class="login-container">
-    <h2 class="login-title">Вход в систему</h2>
-    <form method="post">
-        <div class="form-group">
-            <label class="form-label" for="username">Имя пользователя:</label>
-            <input class="form-input" type="text" id="username" name="username" required>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRP Clan - Вход</title>
+    <link rel="stylesheet" href="/static/css/dark-theme.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="/" class="nav-link">Главная</a></li>
+                <li class="nav-item"><a href="/loot" class="nav-link">Дроп</a></li>
+                <li class="nav-item"><a href="/stats" class="nav-link">Статистика</a></li>
+                <li class="nav-item"><a href="/admin" class="nav-link">Админка</a></li>
+            </ul>
         </div>
-        <div class="form-group">
-            <label class="form-label" for="password">Пароль:</label>
-            <input class="form-input" type="password" id="password" name="password" required>
-        </div>
-        <button class="btn" type="submit">Войти</button>
-    </form>
+    </nav>
 
-    <div style="margin-top: 20px; text-align: center;">
-        <p>Демо доступ:</p>
-        <p>Логин: <strong>admin</strong></p>
-        <p>Пароль: <strong>admin</strong></p>
+    <div class="main-content">
+        <div class="login-container">
+            <h2 class="login-title">Вход в систему</h2>
+            <form method="post">
+                <div class="form-group">
+                    <label class="form-label" for="username">Имя пользователя:</label>
+                    <input class="form-input" type="text" id="username" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="password">Пароль:</label>
+                    <input class="form-input" type="password" id="password" name="password" required>
+                </div>
+                <button class="btn" type="submit">Войти</button>
+            </form>
+
+            <div style="margin-top: 20px; text-align: center;">
+                <p>Демо доступ:</p>
+                <p>Логин: <strong>admin</strong></p>
+                <p>Пароль: <strong>admin</strong></p>
+            </div>
+        </div>
     </div>
-</div>
+</body>
+</html>

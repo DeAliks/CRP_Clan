@@ -1,75 +1,96 @@
 $def with (upcoming_bosses, top_bosses, top_players)
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRP Clan - Главная</title>
+    <link rel="stylesheet" href="/static/css/dark-theme.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="/" class="nav-link">Главная</a></li>
+                <li class="nav-item"><a href="/loot" class="nav-link">Дроп</a></li>
+                <li class="nav-item"><a href="/stats" class="nav-link">Статистика</a></li>
+                <li class="nav-item"><a href="/admin" class="nav-link">Админка</a></li>
+            </ul>
+        </div>
+    </nav>
 
-<div class="grid">
-    <div class="card">
-        <h2>Ближайшие боссы (24 часа)</h2>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Босс</th>
-                    <th>Время респавна</th>
-                </tr>
-            </thead>
-            <tbody>
-                $if upcoming_bosses:
-                    $for boss in upcoming_bosses:
+    <div class="main-content">
+        <div class="grid">
+            <div class="card">
+                <h2>Ближайшие боссы (24 часа)</h2>
+                <table class="table">
+                    <thead>
                         <tr>
-                            <td>$boss['boss_name']</td>
-                            <td>$boss['respawn']</td>
+                            <th>Босс</th>
+                            <th>Время респавна</th>
                         </tr>
-                $else:
-                    <tr>
-                        <td colspan="2">Нет предстоящих боссов</td>
-                    </tr>
-            </tbody>
-        </table>
-    </div>
+                    </thead>
+                    <tbody>
+                        $if upcoming_bosses:
+                            $for boss in upcoming_bosses:
+                                <tr>
+                                    <td>$boss['boss_name']</td>
+                                    <td>$boss['respawn']</td>
+                                </tr>
+                        $else:
+                            <tr>
+                                <td colspan="2">Нет предстоящих боссов</td>
+                            </tr>
+                    </tbody>
+                </table>
+            </div>
 
-    <div class="card">
-        <h2>Топ боссов по убийствам</h2>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Босс</th>
-                    <th>Количество убийств</th>
-                </tr>
-            </thead>
-            <tbody>
-                $if top_bosses:
-                    $for boss in top_bosses:
+            <div class="card">
+                <h2>Топ боссов по убийствам</h2>
+                <table class="table">
+                    <thead>
                         <tr>
-                            <td>$boss['boss_name']</td>
-                            <td>$boss['kill_count']</td>
+                            <th>Босс</th>
+                            <th>Количество убийств</th>
                         </tr>
-                $else:
-                    <tr>
-                        <td colspan="2">Нет данных о боссах</td>
-                    </tr>
-            </tbody>
-        </table>
-    </div>
+                    </thead>
+                    <tbody>
+                        $if top_bosses:
+                            $for boss in top_bosses:
+                                <tr>
+                                    <td>$boss['boss_name']</td>
+                                    <td>$boss['kill_count']</td>
+                                </tr>
+                        $else:
+                            <tr>
+                                <td colspan="2">Нет данных о боссах</td>
+                            </tr>
+                    </tbody>
+                </table>
+            </div>
 
-    <div class="card">
-        <h2>Топ игроков за неделю</h2>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Игрок</th>
-                    <th>Посещений рейдов</th>
-                </tr>
-            </thead>
-            <tbody>
-                $if top_players:
-                    $for player in top_players:
+            <div class="card">
+                <h2>Топ игроков за неделю</h2>
+                <table class="table">
+                    <thead>
                         <tr>
-                            <td>$player['username']</td>
-                            <td>$player['attendance_count']</td>
+                            <th>Игрок</th>
+                            <th>Посещений рейдов</th>
                         </tr>
-                $else:
-                    <tr>
-                        <td colspan="2">Нет данных об игроках</td>
-                    </tr>
-            </tbody>
-        </table>
+                    </thead>
+                    <tbody>
+                        $if top_players:
+                            $for player in top_players:
+                                <tr>
+                                    <td>$player['username']</td>
+                                    <td>$player['attendance_count']</td>
+                                </tr>
+                        $else:
+                            <tr>
+                                <td colspan="2">Нет данных об игроках</td>
+                            </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-</div>
+</body>
+</html>

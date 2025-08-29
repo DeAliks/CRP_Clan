@@ -1,66 +1,87 @@
 $def with (bosses, members)
-
-<div class="grid">
-    <div class="card">
-        <h2>Панель администратора</h2>
-
-        <div class="form-group">
-            <h3>Отметить появление босса</h3>
-            <select id="bossSelect" class="form-select">
-                $if bosses:
-                    $for boss in bosses:
-                        <option value="$boss['boss_name']">$boss['boss_name']</option>
-                $else:
-                    <option value="">Нет доступных боссов</option>
-            </select>
-            <button class="btn" onclick="spawnBoss()">Отметить появление</button>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CRP Clan - Админка</title>
+    <link rel="stylesheet" href="/static/css/dark-theme.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="/" class="nav-link">Главная</a></li>
+                <li class="nav-item"><a href="/loot" class="nav-link">Дроп</a></li>
+                <li class="nav-item"><a href="/stats" class="nav-link">Статистика</a></li>
+                <li class="nav-item"><a href="/admin" class="nav-link">Админка</a></li>
+            </ul>
         </div>
+    </nav>
 
-        <div class="form-group">
-            <h3>Управление участниками</h3>
-            <select id="memberSelect" class="form-select">
-                $if members:
-                    $for member in members:
-                        <option value="$member['user_id']">$member['username']</option>
-                $else:
-                    <option value="">Нет участников</option>
-            </select>
-            <button class="btn" onclick="editMember()">Редактировать</button>
+    <div class="main-content">
+        <div class="grid">
+            <div class="card">
+                <h2>Панель администратора</h2>
+
+                <div class="form-group">
+                    <h3>Отметить появление босса</h3>
+                    <select id="bossSelect" class="form-select">
+                        $if bosses:
+                            $for boss in bosses:
+                                <option value="$boss['boss_name']">$boss['boss_name']</option>
+                        $else:
+                            <option value="">Нет доступных боссов</option>
+                    </select>
+                    <button class="btn" onclick="spawnBoss()">Отметить появление</button>
+                </div>
+
+                <div class="form-group">
+                    <h3>Управление участниками</h3>
+                    <select id="memberSelect" class="form-select">
+                        $if members:
+                            $for member in members:
+                                <option value="$member['user_id']">$member['username']</option>
+                        $else:
+                            <option value="">Нет участников</option>
+                    </select>
+                    <button class="btn" onclick="editMember()">Редактировать</button>
+                </div>
+            </div>
         </div>
     </div>
-</div>
 
-<script>
-function spawnBoss() {
-    const bossName = document.getElementById('bossSelect').value;
-    if (!bossName) {
-        alert('Выберите босса');
-        return;
+    <script>
+    function spawnBoss() {
+        const bossName = document.getElementById('bossSelect').value;
+        if (!bossName) {
+            alert('Выберите босса');
+            return;
+        }
+
+        fetch('/api/boss_spawn', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `boss_name=${encodeURIComponent(bossName)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Ошибка при отправке запроса');
+        });
     }
 
-    fetch('/api/boss_spawn', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `boss_name=${encodeURIComponent(bossName)}`
-    })
-    .then(response => response.json())
-    .then(data => {
-        alert(data.message);
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Ошибка при отправке запроса');
-    });
-}
-
-function editMember() {
-    const memberId = document.getElementById('memberSelect').value;
-    if (!memberId) {
-        alert('Выберите участника');
-        return;
+    function editMember() {
+        const memberId = document.getElementById('memberSelect').value;
+        if (!memberId) {
+            alert('Выберите участника');
+            return;
+        }
+        alert(`Редактирование участника с ID: ${memberId}`);
     }
-    alert(`Редактирование участника с ID: ${memberId}`);
-}
-</script>
+    </script>
+</body>
+</html>

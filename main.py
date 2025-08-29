@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands, tasks
-import sqlite3
 import datetime
 import os
 from dotenv import load_dotenv
@@ -14,7 +13,9 @@ import numpy as np
 import colorsys
 import logging
 import threading
-from database import init_db, get_db_connection
+
+# Импортируем функции из database.py
+from database import init_db, get_db_connection, migrate_database
 
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
@@ -95,170 +96,6 @@ async def on_ready():
     web_thread.daemon = True
     web_thread.start()
     logger.info("Веб-сервер запущен на http://0.0.0.0:8080")
-# Подключение к БД
-def get_db_connection():
-    conn = sqlite3.connect('crp_clan.db')
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-# Функция для миграции базы данных
-def migrate_database():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("PRAGMA table_info(boss_kills)")
-    columns = [column[1] for column in cursor.fetchall()]
-
-    if 'is_killed' not in columns:
-        cursor.execute("ALTER TABLE boss_kills ADD COLUMN is_killed INTEGER DEFAULT 0")
-
-    if 'respawn_notified' not in columns:
-        cursor.execute("ALTER TABLE boss_kills ADD COLUMN respawn_notified INTEGER DEFAULT 0")
-
-    if 'channel_id' not in columns:
-        cursor.execute("ALTER TABLE boss_kills ADD COLUMN channel_id INTEGER")
-
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='boss_loot'")
-    if not cursor.fetchone():
-        cursor.execute('''
-            CREATE TABLE boss_loot (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                boss_kill_id INTEGER,
-                user_id INTEGER,
-                username TEXT,
-                screenshot_path TEXT,
-                loot_text TEXT,
-                created_at TEXT,
-                FOREIGN KEY (boss_kill_id) REFERENCES boss_kills (id)
-            )
-        ''')
-
-    conn.commit()
-    conn.close()
-
-
-# Инициализация таблиц
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS boss_kills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            boss_name TEXT,
-            kill_time TEXT,
-            respawn TEXT,
-            message_id INTEGER,
-            channel_id INTEGER,
-            is_killed INTEGER DEFAULT 0,
-            respawn_notified INTEGER DEFAULT 0
-        )
-    ''')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS boss_attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            boss_kill_id INTEGER,
-            user_id INTEGER,
-            username TEXT,
-            attended INTEGER DEFAULT 0,
-            FOREIGN KEY (boss_kill_id) REFERENCES boss_kills (id)
-        )
-    ''')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS boss_loot (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            boss_kill_id INTEGER,
-            user_id INTEGER,
-            username TEXT,
-            screenshot_path TEXT,
-            loot_text TEXT,
-            created_at TEXT,
-            FOREIGN KEY (boss_kill_id) REFERENCES boss_kills (id)
-        )
-    ''')
-
-    conn.commit()
-    conn.close()
-
-    migrate_database()
-
-
-@bot.event
-async def on_ready():
-    logger.info(f'Бот {bot.user} запущен!')
-    init_db()
-    check_respawns.start()
-
-
-# Фоновая задача для проверки респавнов боссов
-@tasks.loop(minutes=5)
-async def check_respawns():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Получаем только актуальные записи (последнее убийство для каждого босса)
-        cursor.execute('''
-            SELECT bk1.* 
-            FROM boss_kills bk1
-            INNER JOIN (
-                SELECT boss_name, MAX(id) as max_id
-                FROM boss_kills
-                GROUP BY boss_name
-            ) bk2 ON bk1.id = bk2.max_id
-            WHERE bk1.respawn_notified = 0 AND bk1.is_killed = 1
-        ''')
-
-        bosses_to_respawn = cursor.fetchall()
-        now = datetime.datetime.now()
-
-        for boss in bosses_to_respawn:
-            try:
-                respawn_time = datetime.datetime.strptime(boss['respawn'], "%d.%m.%y-%H:%M")
-
-                if now >= respawn_time:
-                    channel = bot.get_channel(boss['channel_id'])
-                    if channel:
-                        # Отправляем прямое уведомление о появлении босса
-                        message = await channel.send(
-                            f"@everyone\n"
-                            f"🔥 БОСС ПОЯВИЛСЯ!\n"
-                            f"{boss['boss_name']} - сейчас появится\n\n"
-                            f"Поставьте реакцию ✅ для отметки участия на боссе\n\n"
-                            f"📍 Действия\n"
-                            f"✅ - Участвую в убийстве босса\n"
-                            f"💬 - Ответьте на это сообщение со скриншотом дропа чтобы отметить убийство босса"
-                        )
-
-                        await message.add_reaction('✅')
-
-                        # Создаем новую запись в базе данных для нового появления босса
-                        new_kill_time = (now + datetime.timedelta(minutes=5)).strftime("%d.%m.%y-%H:%M")
-                        respawn_hours = BOSS_RESPAWNS.get(boss['boss_name'], 24)  # Значение по умолчанию 24 часа
-                        new_respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%d.%m.%y-%H:%M")
-
-                        cursor.execute(
-                            'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id, channel_id) VALUES (?, ?, ?, ?, ?)',
-                            (boss['boss_name'], new_kill_time, new_respawn_time, message.id, channel.id)
-                        )
-
-                        # Помечаем старую запись как обработанную
-                        cursor.execute(
-                            'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
-                            (boss['id'],)
-                        )
-
-                        conn.commit()
-                        logger.info(f"Автоматически создано уведомление о появлении босса {boss['boss_name']}")
-            except Exception as e:
-                logger.error(f"Ошибка при обработке респавна босса {boss['boss_name']}: {e}")
-
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка в задаче check_respawns: {e}")
 
 def save_debug_image(image, name):
     """Сохраняет изображение для отладки"""
@@ -342,7 +179,7 @@ def enhance_hsv(image):
 
 
 def enhance_image_for_ocr(image):
-    """Гибрид: пробуем два метода и выбираем лучший"""
+    """Гибрид: пробуем два методы и выбираем лучший"""
     # Сохраняем оригинал
     original_path = save_debug_image(image, "01_original")
     logger.info(f"Сохранено исходное изображение: {original_path}")
@@ -516,9 +353,9 @@ async def on_reaction_add(reaction, user):
         await message.add_reaction('✅')
 
         now = datetime.datetime.now()
-        kill_time = (now + datetime.timedelta(minutes=5)).strftime("%d.%m.%y-%H:%M")
+        kill_time = (now + datetime.timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M")
         respawn_hours = BOSS_RESPAWNS[boss_name]
-        respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%d.%m.%y-%H:%M")
+        respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%Y-%m-%d %H:%M")
 
         cursor.execute(
             'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id, channel_id) VALUES (?, ?, ?, ?, ?)',
@@ -668,7 +505,7 @@ async def on_message(message):
                     cursor.execute(
                         'INSERT INTO boss_loot (boss_kill_id, user_id, username, screenshot_path, loot_text, created_at) VALUES (?, ?, ?, ?, ?, ?)',
                         (boss_kill['id'], message.author.id, str(message.author), screenshot_path, loot_text,
-                         datetime.datetime.now().strftime("%d.%m.%y-%H:%M"))
+                         datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
                     )
 
                     conn.commit()
@@ -738,151 +575,72 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
-
-
-# Команда для просмотра дропа с босса
-@bot.command()
-async def loot(ctx, boss_kill_id: int = None):
-    """Показывает дроп с указанного убийства босса"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    if boss_kill_id:
-        cursor.execute(
-            'SELECT bl.*, bk.boss_name FROM boss_loot bl JOIN boss_kills bk ON bl.boss_kill_id = bk.id WHERE bl.boss_kill_id = ?',
-            (boss_kill_id,)
-        )
-        loot_data = cursor.fetchall()
-
-        if not loot_data:
-            await ctx.send("Не найдено данных о дропе для указанного ID убийства.")
-            conn.close()
-            return
-
-        embed = discord.Embed(title=f"Дроп с {loot_data[0]['boss_name']}", color=0x00ff00)
-
-        for loot in loot_data:
-            loot_text = loot['loot_text'] if loot['loot_text'] else "Не удалось распознать дроп"
-            embed.add_field(
-                name=f"От {loot['username']}",
-                value=f"```{loot_text[:500]}...```" if len(loot_text) > 500 else f"```{loot_text}```",
-                inline=False
-            )
-
-        await ctx.send(embed=embed)
-        logger.info(f"Показан дроп для убийства босса ID: {boss_kill_id}")
-    else:
-        cursor.execute('''
-            SELECT bk.id, bk.boss_name, bk.kill_time, COUNT(bl.id) as loot_count 
-            FROM boss_kills bk 
-            LEFT JOIN boss_loot bl ON bk.id = bl.boss_kill_id 
-            WHERE bk.is_killed = 1 
-            GROUP BY bk.id 
-            ORDER BY bk.kill_time DESC 
-            LIMIT 5
-        ''')
-        recent_kills = cursor.fetchall()
-
-        if not recent_kills:
-            await ctx.send("Нет данных об убийствах боссов.")
-            conn.close()
-            return
-
-        embed = discord.Embed(title="Последние убийства боссов", color=0x00ff00)
-
-        for kill in recent_kills:
-            embed.add_field(
-                name=f"{kill['boss_name']} ({kill['kill_time']})",
-                value=f"ID: {kill['id']}, Дропов: {kill['loot_count']}",
-                inline=False
-            )
-
-        embed.set_footer(text="Используйте !loot <ID> для просмотра деталей дропа")
-        await ctx.send(embed=embed)
-        logger.info("Показаны последние убийства боссов")
-
-    conn.close()
-
-
-@bot.command()
-async def boss_rate(ctx, member: discord.Member = None):
-    if member is None:
-        member = ctx.author
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    today = datetime.datetime.now().strftime("%d.%m.%y")
-    cursor.execute(
-        'SELECT COUNT(*) FROM boss_kills WHERE kill_time LIKE ?',
-        (f'{today}%',)
-    )
-    total_bosses_today = cursor.fetchone()[0] or 0
-
-    cursor.execute(
-        '''SELECT COUNT(*) FROM boss_attendance 
-           INNER JOIN boss_kills ON boss_attendance.boss_kill_id = boss_kills.id 
-           WHERE boss_attendance.user_id = ? AND boss_attendance.attended = 1 
-           AND boss_kills.kill_time LIKE ?''',
-        (member.id, f'{today}%',)
-    )
-    attended_today = cursor.fetchone()[0] or 0
-
-    week_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime("%d.%m.%y")
-    cursor.execute(
-        'SELECT COUNT(*) FROM boss_kills WHERE kill_time >= ?',
-        (week_ago,)
-    )
-    total_bosses_week = cursor.fetchone()[0] or 0
-
-    cursor.execute(
-        '''SELECT COUNT(*) FROM boss_attendance 
-           INNER JOIN boss_kills ON boss_attendance.boss_kill_id = boss_kills.id 
-           WHERE boss_attendance.user_id = ? AND boss_attendance.attended = 1 
-           AND boss_kills.kill_time >= ?''',
-        (member.id, week_ago)
-    )
-    attended_week = cursor.fetchone()[0] or 0
-
-    cursor.execute(
-        'SELECT COUNT(*) FROM boss_kills'
-    )
-    total_bosses = cursor.fetchone()[0] or 0
-
-    cursor.execute(
-        '''SELECT COUNT(*) FROM boss_attendance 
-           INNER JOIN boss_kills ON boss_attendance.boss_kill_id = boss_kills.id 
-           WHERE boss_attendance.user_id = ? AND boss_attendance.attended = 1''',
-        (member.id,)
-    )
-    attended_total = cursor.fetchone()[0] or 0
-
-    conn.close()
-
-    rate_today = (attended_today / total_bosses_today * 100) if total_bosses_today > 0 else 0
-    rate_week = (attended_week / total_bosses_week * 100) if total_bosses_week > 0 else 0
-    rate_total = (attended_total / total_bosses * 100) if total_bosses > 0 else 0
-
-    embed = discord.Embed(title=f"Статистика посещаемости для {member.display_name}")
-    embed.add_field(name="Сегодня", value=f"{attended_today}/{total_bosses_today} ({rate_today:.1f}%)")
-    embed.add_field(name="За неделю", value=f"{attended_week}/{total_bosses_week} ({rate_week:.1f}%)")
-    embed.add_field(name="За всё время", value=f"{attended_total}/{total_bosses} ({rate_total:.1f}%)")
-
-    await ctx.send(embed=embed)
-    logger.info(f"Показана статистика для пользователя {member.display_name}")
-
-
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("Неизвестная команда!")
-    else:
-        logger.error(f"Произошла ошибка: {error}")
-
-
-# Запуск бота
-if __name__ == "__main__":
+# Фоновая задача для проверки респавнов боссов
+@tasks.loop(minutes=5)
+async def check_respawns():
     try:
-        bot.run(TOKEN)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Получаем только актуальные записи (последнее убийство для каждого босса)
+        cursor.execute('''
+            SELECT bk1.* 
+            FROM boss_kills bk1
+            INNER JOIN (
+                SELECT boss_name, MAX(id) as max_id
+                FROM boss_kills
+                GROUP BY boss_name
+            ) bk2 ON bk1.id = bk2.max_id
+            WHERE bk1.respawn_notified = 0 AND bk1.is_killed = 1
+        ''')
+
+        bosses_to_respawn = cursor.fetchall()
+        now = datetime.datetime.now()
+
+        for boss in bosses_to_respawn:
+            try:
+                respawn_time = datetime.datetime.strptime(boss['respawn'], "%Y-%m-%d %H:%M")
+
+                if now >= respawn_time:
+                    channel = bot.get_channel(boss['channel_id'])
+                    if channel:
+                        # Отправляем прямое уведомление о появлении босса
+                        message = await channel.send(
+                            f"@everyone\n"
+                            f"🔥 БОСС ПОЯВИЛСЯ!\n"
+                            f"{boss['boss_name']} - сейчас появится\n\n"
+                            f"Поставьте реакцию ✅ для отметки участия на боссе\n\n"
+                            f"📍 Действия\n"
+                            f"✅ - Участвую в убийстве босса\n"
+                            f"💬 - Ответьте на это сообщение со скриншотом дропа чтобы отметить убийство босса"
+                        )
+
+                        await message.add_reaction('✅')
+
+                        # Создаем новую запись в базе данных для нового появления босса
+                        new_kill_time = (now + datetime.timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M")
+                        respawn_hours = BOSS_RESPAWNS.get(boss['boss_name'], 24)  # Значение по умолчанию 24 часа
+                        new_respawn_time = (now + datetime.timedelta(hours=respawn_hours)).strftime("%Y-%m-%d %H:%M")
+
+                        cursor.execute(
+                            'INSERT INTO boss_kills (boss_name, kill_time, respawn, message_id, channel_id) VALUES (?, ?, ?, ?, ?)',
+                            (boss['boss_name'], new_kill_time, new_respawn_time, message.id, channel.id)
+                        )
+
+                        # Помечаем старую запись как обработанную
+                        cursor.execute(
+                            'UPDATE boss_kills SET respawn_notified = 1 WHERE id = ?',
+                            (boss['id'],)
+                        )
+
+                        conn.commit()
+                        logger.info(f"Автоматически создано уведомление о появлении босса {boss['boss_name']}")
+            except Exception as e:
+                logger.error(f"Ошибка при обработке респавна босса {boss['boss_name']}: {e}")
+
+        conn.close()
     except Exception as e:
-        logger.error(f"Произошла ошибка при запуске бота: {e}")
+        logger.error(f"Ошибка в задаче check_respawns: {e}")
+
+if __name__ == "__main__":
+    bot.run(TOKEN)
