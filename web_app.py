@@ -28,10 +28,13 @@ urls = (
     '/logout', 'Logout',
     '/api/boss_spawn', 'ApiBossSpawn',
     '/static/(.*)', 'Static',
-    '/.*', 'NotFound'  # Добавлено для обработки 404 ошибок
+    '/.*', 'NotFound'
 )
 
+app = web.application(urls, globals())
 
+
+# Функция для определения цвета предмета лута
 def get_loot_color_class(loot_text):
     """Определяет CSS класс для цвета предмета на основе его названия"""
     if not loot_text:
@@ -58,13 +61,19 @@ def get_loot_color_class(loot_text):
     else:
         return ''
 
-app = web.application(urls, globals())
-# Обновите рендер, чтобы передать эту функцию в шаблоны
+
 render = web.template.render('templates/', base='base',
-                           globals={'str': str, 'get_loot_color_class': get_loot_color_class})
+                             globals={'str': str, 'get_loot_color_class': get_loot_color_class})
 
 # Конфигурация
+web.config.debug = False  # Это важно для работы сессий :cite[1]
+
+# Конфигурация базы данных
 DB_PATH = 'crp_clan.db'
+
+# Простая система аутентификации (вместо сложных сессий)
+# Будем использовать куки для хранения статуса авторизации
+AUTH_COOKIE_NAME = 'crp_clan_admin'
 
 
 def safe_db_query(query, params=()):
@@ -74,6 +83,8 @@ def safe_db_query(query, params=()):
         cursor = conn.cursor()
         cursor.execute(query, params)
         result = cursor.fetchall()
+        # Преобразуем Row объекты в словари
+        result = [dict(row) for row in result]
         conn.close()
         return result
     except sqlite3.Error as e:
@@ -82,6 +93,17 @@ def safe_db_query(query, params=()):
     except Exception as e:
         logger.error(f"Неожиданная ошибка: {e}")
         return []
+
+
+def is_authenticated():
+    """Проверяет, авторизован ли пользователь"""
+    cookie_value = web.cookies().get(AUTH_COOKIE_NAME)
+    return cookie_value == 'authenticated'
+
+
+def set_authenticated(value):
+    """Устанавливает статус авторизации"""
+    web.setcookie(AUTH_COOKIE_NAME, 'authenticated' if value else '', expires=3600)
 
 
 class Static:
@@ -196,11 +218,6 @@ class Loot:
                         'created_at': '28.08.25-12:45'
                     }
                 ]
-            else:
-                # Очищаем данные от потенциально проблемных символов
-                for loot in loot_data:
-                    if loot['loot_text']:
-                        loot['loot_text'] = loot['loot_text'].replace('"', '').replace("'", "")
 
             return render.loot(loot_data)
         except Exception as e:
@@ -220,6 +237,7 @@ class Loot:
                 }
             ]
             return render.loot(loot_data)
+
 
 class Stats:
     def GET(self):
@@ -279,9 +297,20 @@ class Stats:
 
 class Admin:
     def GET(self):
+        # Проверка авторизации
+        if not is_authenticated():
+            raise web.seeother('/login')
+
         try:
             bosses = safe_db_query('SELECT DISTINCT boss_name FROM boss_kills ORDER BY boss_name')
             members = safe_db_query('SELECT DISTINCT user_id, username FROM boss_attendance ORDER BY username')
+
+            # Очищаем данные от специальных символов
+            for boss in bosses:
+                boss['boss_name'] = boss['boss_name'].replace('"', '').replace("'", "") if boss['boss_name'] else ""
+
+            for member in members:
+                member['username'] = member['username'].replace('"', '').replace("'", "") if member['username'] else ""
 
             if not bosses:
                 bosses = [{'boss_name': 'Venatus - 60 LV'}, {'boss_name': 'Ego - 70 LV'}]
@@ -320,8 +349,7 @@ class Login:
         data = web.input()
         # Простая аутентификация (в реальном приложении нужно использовать безопасный метод)
         if data.username == "admin" and data.password == "admin":
-            web.ctx.session.user_id = 1
-            web.ctx.session.is_admin = True
+            set_authenticated(True)
             raise web.seeother('/admin')
         else:
             return "Неверные учетные данные"
@@ -329,7 +357,7 @@ class Login:
 
 class Logout:
     def GET(self):
-        web.ctx.session.kill()
+        set_authenticated(False)
         raise web.seeother('/')
 
 
@@ -356,8 +384,6 @@ if __name__ == "__main__":
             logger.info("Добавлены тестовые данные в базу")
     except Exception as e:
         logger.error(f"Ошибка при проверке базы данных: {e}")
-        # Создаем тестовые данные даже при ошибке
         insert_test_data()
 
-    web.config.debug = False
     app.run()

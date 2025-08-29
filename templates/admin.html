@@ -10,7 +10,7 @@ $def with (bosses, members)
                 <select id="bossSelect" class="form-select">
                     $if bosses:
                         $for boss in bosses:
-                            <option value="$boss['boss_name']">$boss['boss_name']</option>
+                            <option value="$boss.boss_name">$boss.boss_name</option>
                     $else:
                         <option value="">Нет доступных боссов</option>
                 </select>
@@ -22,7 +22,7 @@ $def with (bosses, members)
                 <select id="memberSelect" class="form-select">
                     $if members:
                         $for member in members:
-                            <option value="$member['user_id']">$member['username']</option>
+                            <option value="$member.user_id">$member.username</option>
                     $else:
                         <option value="">Нет участников</option>
                 </select>
