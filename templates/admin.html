@@ -4,28 +4,35 @@ $def with (bosses, members)
     <div class="card">
         <h2>Панель администратора</h2>
 
-        <div class="form-group">
-            <h3>Отметить появление босса</h3>
-            <select id="bossSelect" class="form-select">
-                $if bosses:
-                    $for boss in bosses:
-                        <option value="$boss['boss_name']">$boss['boss_name']</option>
-                $else:
-                    <option value="">Нет доступных боссов</option>
-            </select>
-            <button class="btn" onclick="spawnBoss()">Отметить появление</button>
-        </div>
+        <div class="admin-actions">
+            <div class="form-group">
+                <h3>Отметить появление босса</h3>
+                <select id="bossSelect" class="form-select">
+                    $if bosses:
+                        $for boss in bosses:
+                            <option value="$boss['boss_name']">$boss['boss_name']</option>
+                    $else:
+                        <option value="">Нет доступных боссов</option>
+                </select>
+                <button class="btn" onclick="spawnBoss()">Отметить появление</button>
+            </div>
 
-        <div class="form-group">
-            <h3>Управление участниками</h3>
-            <select id="memberSelect" class="form-select">
-                $if members:
-                    $for member in members:
-                        <option value="$member['user_id']">$member['username']</option>
-                $else:
-                    <option value="">Нет участников</option>
-            </select>
-            <button class="btn" onclick="editMember()">Редактировать</button>
+            <div class="form-group">
+                <h3>Управление участниками</h3>
+                <select id="memberSelect" class="form-select">
+                    $if members:
+                        $for member in members:
+                            <option value="$member['user_id']">$member['username']</option>
+                    $else:
+                        <option value="">Нет участников</option>
+                </select>
+                <button class="btn" onclick="editMember()">Редактировать</button>
+            </div>
+
+            <div class="form-group">
+                <h3>Действия</h3>
+                <a href="/logout" class="btn btn-logout">Выйти</a>
+            </div>
         </div>
     </div>
 </div>

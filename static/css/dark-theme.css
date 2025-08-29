@@ -1,35 +1,28 @@
-:root {
-    --bg-primary: #121212;
-    --bg-secondary: #1e1e1e;
-    --text-primary: #ffffff;
-    --text-secondary: #b3b3b3;
-    --accent-color: #bb86fc;
-    --accent-secondary: #03dac6;
-    --danger-color: #cf6679;
-    --card-bg: #1e1e1e;
-    --border-color: #333333;
-}
-
+/* Основные стили */
 * {
-    box-sizing: border-box;
     margin: 0;
     padding: 0;
+    box-sizing: border-box;
 }
 
 body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
     line-height: 1.6;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
 }
 
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Навигация */
 .navbar {
-    background-color: var(--bg-secondary);
+    background-color: #2d2d2d;
+    border-bottom: 1px solid #444;
     padding: 1rem 0;
-    border-bottom: 1px solid var(--border-color);
 }
 
 .nav-container {
@@ -38,39 +31,39 @@ body {
     align-items: center;
     max-width: 1200px;
     margin: 0 auto;
-    padding: 0 1rem;
+    padding: 0 20px;
+}
+
+.nav-logo h1 {
+    color: #4CAF50;
+    font-size: 1.8rem;
 }
 
 .nav-menu {
     display: flex;
-    list-style: none;
-}
-
-.nav-item {
-    margin-left: 1.5rem;
+    gap: 2rem;
 }
 
 .nav-link {
-    color: var(--text-primary);
+    color: #e0e0e0;
     text-decoration: none;
-    transition: color 0.3s;
     font-weight: 500;
+    transition: color 0.3s;
 }
 
 .nav-link:hover {
-    color: var(--accent-color);
+    color: #4CAF50;
 }
 
+/* Основной контент */
 .main-content {
-    flex: 1;
-    max-width: 1200px;
-    margin: 2rem auto;
-    padding: 0 1rem;
-    width: 100%;
+    padding: 2rem 0;
+    min-height: calc(100vh - 160px);
 }
 
+/* Карточки */
 .card {
-    background-color: var(--card-bg);
+    background-color: #2d2d2d;
     border-radius: 8px;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
@@ -78,55 +71,44 @@ body {
 }
 
 .card h2 {
-    color: var(--accent-color);
+    color: #4CAF50;
     margin-bottom: 1rem;
+    border-bottom: 1px solid #444;
+    padding-bottom: 0.5rem;
 }
 
+/* Таблицы */
 .table {
     width: 100%;
     border-collapse: collapse;
-    margin: 1rem 0;
+    margin-top: 1rem;
 }
 
-.table th, .table td {
+.table th,
+.table td {
     padding: 0.75rem;
     text-align: left;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid #444;
 }
 
 .table th {
-    background-color: var(--bg-secondary);
-    color: var(--accent-color);
-    font-weight: 600;
+    background-color: #3d3d3d;
+    color: #4CAF50;
 }
 
 .table tr:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: #3d3d3d;
 }
 
-.btn {
-    background-color: var(--accent-color);
-    color: black;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s;
-    font-weight: 500;
+/* Сетка */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
 }
 
-.btn:hover {
-    background-color: var(--accent-secondary);
-}
-
-.btn-danger {
-    background-color: var(--danger-color);
-}
-
-.btn-danger:hover {
-    background-color: #b00020;
-}
-
+/* Формы */
 .form-group {
     margin-bottom: 1rem;
 }
@@ -134,74 +116,246 @@ body {
 .form-label {
     display: block;
     margin-bottom: 0.5rem;
-    color: var(--text-secondary);
-    font-weight: 500;
+    color: #e0e0e0;
 }
 
-.form-input, .form-select {
+.form-input,
+.form-select {
     width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--border-color);
+    padding: 0.75rem;
+    background-color: #3d3d3d;
+    border: 1px solid #555;
     border-radius: 4px;
-    background-color: var(--bg-secondary);
-    color: var(--text-primary);
+    color: #e0e0e0;
 }
 
-.form-input:focus, .form-select:focus {
+.form-input:focus,
+.form-select:focus {
     outline: none;
-    border-color: var(--accent-color);
+    border-color: #4CAF50;
 }
 
+/* Кнопки */
+.btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.3s;
+}
+
+.btn:hover {
+    background-color: #3e8e41;
+}
+
+/* Футер */
 .footer {
-    background-color: var(--bg-secondary);
-    padding: 1rem 0;
+    background-color: #2d2d2d;
+    padding: 1.5rem 0;
     text-align: center;
-    border-top: 1px solid var(--border-color);
-    margin-top: 2rem;
+    border-top: 1px solid #444;
 }
 
-.grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-    margin: 1.5rem 0;
+/* Адаптивность */
+@media (max-width: 768px) {
+    .nav-container {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .nav-menu {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
 }
 
-.countdown {
-    font-size: 1.2rem;
-    font-weight: bold;
-    color: var(--accent-secondary);
-}
-
+/* Стили для страницы входа */
 .login-container {
     max-width: 400px;
     margin: 2rem auto;
     padding: 2rem;
-    background-color: var(--card-bg);
+    background-color: #2d2d2d;
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .login-title {
     text-align: center;
+    color: #4CAF50;
     margin-bottom: 1.5rem;
-    color: var(--accent-color);
+
+
+/* Стили для админ-панели */
+.admin-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
 }
 
+.btn-logout {
+    background-color: #f44336;
+}
+
+.btn-logout:hover {
+    background-color: #d32f2f;
+}
+
+/* Улучшенные стили для форм в админке */
+.admin-actions .form-group {
+    background-color: #3d3d3d;
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid #555;
+}
+
+.admin-actions .form-group h3 {
+    margin-top: 0;
+    color: #4CAF50;
+    border-bottom: 1px solid #555;
+    padding-bottom: 0.5rem;
+}
+
+/* Стилизация выпадающих списков */
+select {
+    background-color: #3d3d3d;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234CAF50' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 1rem;
+    padding-right: 2rem;
+}
+
+select:hover {
+    border-color: #4CAF50;
+}
+
+select:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+/* Для старых браузеров */
+select::-ms-expand {
+    display: none;
+}
+
+/* Стили для option */
+option {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+}
+
+option:hover,
+option:focus,
+option:active,
+option:checked {
+    background-color: #4CAF50;
+    color: #fff;
+}
+/* Стили для предметов лута */
+.loot-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.loot-item {
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.no-loot {
+    color: #888;
+    font-style: italic;
+}
+
+/* Зеленый цвет - Homun, Chest */
+.loot-green {
+    background-color: rgba(0, 128, 0, 0.2);
+    color: #4CAF50;
+    border: 1px solid #4CAF50;
+}
+
+/* Синий цвет - Stone, Part, Fateful, Corrupted, Dark Orh */
+.loot-blue {
+    background-color: rgba(30, 144, 255, 0.2);
+    color: #1E90FF;
+    border: 1px solid #1E90FF;
+}
+
+/* Фиолетовый цвет - Expert, Gray Dawn, Aquleus */
+.loot-purple {
+    background-color: rgba(128, 0, 128, 0.2);
+    color: #9370DB;
+    border: 1px solid #9370DB;
+}
+
+/* Оранжевый цвет - Ability */
+.loot-orange {
+    background-color: rgba(255, 165, 0, 0.2);
+    color: #FFA500;
+    border: 1px solid #FFA500;
+}
+
+/* Эффекты при наведении */
+.loot-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Улучшения для таблицы с лутом */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.table th {
+    background-color: #3d3d3d;
+    color: #4CAF50;
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #555;
+}
+
+.table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #444;
+}
+
+.table tr:hover {
+    background-color: #3d3d3d;
+}
+
+/* Адаптивность для таблицы */
 @media (max-width: 768px) {
-    .nav-container {
-        flex-direction: column;
+    .table {
+        display: block;
+        overflow-x: auto;
     }
 
-    .nav-menu {
-        margin-top: 1rem;
+    .loot-items {
+        min-width: 200px;
     }
-
-    .nav-item {
-        margin: 0 0.5rem;
-    }
-
-    .grid {
-        grid-template-columns: 1fr;
-    }
+}
 }

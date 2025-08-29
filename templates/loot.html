@@ -17,7 +17,13 @@ $def with (loot_data)
                     <tr>
                         <td>$loot['boss_name']</td>
                         <td>$loot['username']</td>
-                        <td>$loot['loot_text']</td>
+                        <td class="loot-items">
+                            $if loot['loot_text']:
+                                $# Просто отображаем текст без сложной обработки
+                                <span class="loot-text">$loot['loot_text']</span>
+                            $else:
+                                <span class="no-loot">Не удалось распознать дроп</span>
+                        </td>
                         <td>$loot['created_at']</td>
                     </tr>
             </tbody>

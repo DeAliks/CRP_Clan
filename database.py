@@ -3,6 +3,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# В конце database.py добавьте
+def insert_test_data():
+    """Добавляет тестовые данные в базу"""
+    # ... (код функции выше)
+
 def get_db_connection():
     conn = sqlite3.connect('crp_clan.db')
     conn.row_factory = sqlite3.Row
@@ -41,6 +46,70 @@ def migrate_database():
 
     conn.commit()
     conn.close()
+
+
+def insert_test_data():
+    """Добавляет тестовые данные в базу"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Добавляем тестовых боссов
+        from datetime import datetime, timedelta
+        now = datetime.now()
+
+        test_bosses = [
+            ('Venatus - 60 LV', (now - timedelta(hours=2)).strftime("%d.%m.%y-%H:%M"),
+             (now + timedelta(hours=8)).strftime("%d.%m.%y-%H:%M"), 1, 0, 123456789),
+            ('Ego - 70 LV', (now - timedelta(days=1)).strftime("%d.%m.%y-%H:%M"),
+             (now + timedelta(hours=20)).strftime("%d.%m.%y-%H:%M"), 1, 0, 123456790),
+            ('Livera - 75 LV', (now - timedelta(days=2)).strftime("%d.%m.%y-%H:%M"),
+             (now + timedelta(hours=22)).strftime("%d.%m.%y-%H:%M"), 1, 0, 123456791)
+        ]
+
+        cursor.executemany(
+            'INSERT INTO boss_kills (boss_name, kill_time, respawn, is_killed, respawn_notified, message_id) VALUES (?, ?, ?, ?, ?, ?)',
+            test_bosses
+        )
+
+        # Получаем ID добавленных боссов
+        cursor.execute("SELECT id FROM boss_kills")
+        boss_ids = [row[0] for row in cursor.fetchall()]
+
+        # Добавляем тестовых участников
+        test_attendance = []
+        for boss_id in boss_ids:
+            test_attendance.extend([
+                (boss_id, 1, 'Player1', 1),
+                (boss_id, 2, 'Player2', 1),
+                (boss_id, 3, 'Player3', 1)
+            ])
+
+        cursor.executemany(
+            'INSERT INTO boss_attendance (boss_kill_id, user_id, username, attended) VALUES (?, ?, ?, ?)',
+            test_attendance
+        )
+
+        # Добавляем тестовый дроп
+        test_loot = [
+            (boss_ids[0], 1, 'Player1', '/path/to/screenshot1.png', 'Epic Sword, Rare Shield',
+             now.strftime("%d.%m.%y-%H:%M")),
+            (boss_ids[1], 2, 'Player2', '/path/to/screenshot2.png', 'Legendary Armor, Epic Helmet',
+             (now - timedelta(hours=5)).strftime("%d.%m.%y-%H:%M"))
+        ]
+
+        cursor.executemany(
+            'INSERT INTO boss_loot (boss_kill_id, user_id, username, screenshot_path, loot_text, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            test_loot
+        )
+
+        conn.commit()
+        logger.info("Тестовые данные успешно добавлены в базу")
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении тестовых данных: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
 
 def init_db():
     conn = get_db_connection()
